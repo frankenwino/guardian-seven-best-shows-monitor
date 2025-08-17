@@ -8,6 +8,7 @@ import configparser
 from pathlib import Path
 from dotenv import load_dotenv
 import logging
+from datetime import datetime
 
 class Config:
     """Configuration class that loads settings from config.ini and secrets from .env."""
@@ -139,15 +140,56 @@ class Config:
                 if not log_path.is_absolute():
                     log_path = self.project_root / self.log_file
                 
-                log_path.parent.mkdir(parents=True, exist_ok=True)
+                log_dir = log_path.parent
+                log_dir.mkdir(parents=True, exist_ok=True)
                 
-                file_handler = logging.FileHandler(log_path)
+                # Create timestamped log file for this run
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                timestamped_log = log_dir / f"guardian_monitor_{timestamp}.log"
+                
+                file_handler = logging.FileHandler(timestamped_log)
                 file_handler.setFormatter(formatter)
                 root_logger.addHandler(file_handler)
                 
-                logging.info(f"Logging to file: {log_path}")
+                logging.info(f"Logging to file: {timestamped_log}")
+                
+                # Clean up old log files (keep only 10 most recent)
+                self._cleanup_old_logs(log_dir)
+                
             except Exception as e:
                 logging.error(f"Failed to setup file logging: {e}")
+    
+    def _cleanup_old_logs(self, log_dir: Path, max_logs: int = 10):
+        """Clean up old log files, keeping only the most recent ones."""
+        try:
+            # Get all Guardian monitor log files
+            log_pattern = "guardian_monitor_*.log"
+            log_files = list(log_dir.glob(log_pattern))
+            
+            if len(log_files) <= max_logs:
+                return  # No cleanup needed
+            
+            # Sort by modification time (newest first)
+            log_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+            
+            # Keep only the most recent max_logs files
+            files_to_keep = log_files[:max_logs]
+            files_to_delete = log_files[max_logs:]
+            
+            # Delete old log files
+            deleted_count = 0
+            for log_file in files_to_delete:
+                try:
+                    log_file.unlink()
+                    deleted_count += 1
+                except Exception as e:
+                    logging.warning(f"Failed to delete old log {log_file.name}: {e}")
+            
+            if deleted_count > 0:
+                logging.info(f"Cleaned up {deleted_count} old log files, kept {len(files_to_keep)} most recent")
+                
+        except Exception as e:
+            logging.warning(f"Error during log cleanup: {e}")
     
     def get_data_directory_path(self) -> Path:
         """

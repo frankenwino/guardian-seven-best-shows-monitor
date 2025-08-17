@@ -110,6 +110,41 @@ def cleanup_data(storage, days):
     else:
         print("✗ Cleanup failed")
 
+def cleanup_processed_articles(storage, max_articles=100):
+    """Clean up old processed articles."""
+    print("=== Processed Articles Cleanup ===")
+    
+    try:
+        # Use the storage manager's cleanup method
+        import sys
+        from pathlib import Path
+        sys.path.append(str(Path(__file__).parent))
+        from storage import ShowDataStorage
+        
+        storage_manager = ShowDataStorage()
+        result = storage_manager.cleanup_processed_articles_manual(max_articles)
+        
+        if result['status'] == 'no_file':
+            print("❌ No processed articles file found")
+        elif result['status'] == 'no_cleanup_needed':
+            print(f"✅ {result['message']}")
+        elif result['status'] == 'success':
+            print(f"🎉 {result['message']}")
+            print(f"   Original count: {result['original_count']}")
+            print(f"   Final count: {result['final_count']}")
+            print(f"   Removed count: {result['removed_count']}")
+            
+            # Calculate space saved (rough estimate)
+            if result['removed_count'] > 0:
+                avg_size_per_article = 50  # bytes (rough estimate)
+                space_saved = result['removed_count'] * avg_size_per_article
+                print(f"   Estimated space saved: {space_saved} bytes")
+        elif result['status'] == 'error':
+            print(f"❌ Error: {result['message']}")
+            
+    except Exception as e:
+        print(f"❌ Error during cleanup: {e}")
+
 def reset_storage(storage):
     """Reset all storage data."""
     import os
@@ -154,6 +189,10 @@ def main():
     # Duplicates cleanup command
     subparsers.add_parser('duplicates', help='Clean up duplicate entries in shows history')
     
+    # Processed articles cleanup command
+    articles_parser = subparsers.add_parser('cleanup-articles', help='Clean up old processed articles')
+    articles_parser.add_argument('--max', type=int, default=100, help='Maximum number of articles to keep')
+    
     # Reset command
     subparsers.add_parser('reset', help='Reset all storage data')
     
@@ -179,6 +218,8 @@ def main():
         cleanup_data(storage, args.days)
     elif args.command == 'duplicates':
         cleanup_duplicates(storage)
+    elif args.command == 'cleanup-articles':
+        cleanup_processed_articles(storage, args.max)
     elif args.command == 'reset':
         reset_storage(storage)
 

@@ -17,6 +17,13 @@ from scraper import GuardianScraper
 from storage import ShowDataStorage
 from discord_bot import GuardianDiscordBot
 
+# Import qBittorrent rules manager
+try:
+    from qbittorrent_rules import QBittorrentRulesManager
+    QBITTORRENT_AVAILABLE = True
+except ImportError:
+    QBITTORRENT_AVAILABLE = False
+
 class GuardianMonitor:
     """Main application class that orchestrates all components."""
     
@@ -35,6 +42,14 @@ class GuardianMonitor:
             self.scraper = GuardianScraper()
             self.storage = ShowDataStorage(data_dir=str(config.get_data_directory_path()))
             self.discord_bot = GuardianDiscordBot() if config.is_discord_configured() else None
+            
+            # Initialize qBittorrent rules manager if available
+            self.qbt_manager = None
+            if QBITTORRENT_AVAILABLE:
+                self.qbt_manager = QBittorrentRulesManager()
+                self.logger.info("qBittorrent rules manager initialized")
+            else:
+                self.logger.warning("qBittorrent rules manager not available")
             
             if not self.discord_bot:
                 self.logger.warning("Discord not configured - notifications will be disabled")
@@ -91,6 +106,22 @@ class GuardianMonitor:
                 if not success:
                     self.logger.error("Failed to send Discord notifications")
                     # Don't return False here - data was still processed successfully
+            
+            # Check and create qBittorrent rules if available
+            if self.qbt_manager:
+                try:
+                    self._manage_qbittorrent_rules(shows)
+                except Exception as e:
+                    self.logger.error(f"Failed to manage qBittorrent rules: {e}")
+                    # Send error notification if Discord is configured
+                    if self.discord_bot and config.send_error_notifications:
+                        try:
+                            self.discord_bot.send_error_notification(
+                                f"qBittorrent rules error: {str(e)}",
+                                "Error occurred while managing qBittorrent download rules"
+                            )
+                        except Exception as discord_error:
+                            self.logger.error(f"Failed to send qBittorrent error notification: {discord_error}")
             
             self.logger.info(f"Successfully processed {len(shows)} new shows")
             return True
@@ -157,6 +188,110 @@ class GuardianMonitor:
             self.logger.error(f"Error saving shows data: {e}")
             return False
     
+    def _manage_qbittorrent_rules(self, shows: List[Dict[str, str]]) -> None:
+        """
+        Check and create qBittorrent rules for new shows.
+        
+        Args:
+            shows: List of show dictionaries from the Guardian article
+        """
+        self.logger.info("Checking qBittorrent rules for new shows...")
+        
+        was_running = False  # Initialize to avoid UnboundLocalError
+        
+        try:
+            # Load existing qBittorrent rules
+            existing_rules = self.qbt_manager.load_rules()
+            
+            # Check which shows need new rules
+            shows_needing_rules = []
+            for show in shows:
+                title = show['title']
+                matches = self.qbt_manager.check_existing_rules(title, existing_rules)
+                if not matches:  # No exact match found
+                    shows_needing_rules.append(show)
+                    self.logger.info(f"Show needs qBittorrent rule: {title}")
+                else:
+                    self.logger.info(f"Show already has qBittorrent rule: {title}")
+            
+            if not shows_needing_rules:
+                self.logger.info("All shows already have qBittorrent rules")
+                return
+            
+            self.logger.info(f"Creating qBittorrent rules for {len(shows_needing_rules)} shows")
+            
+            # Check if qBittorrent is running and close it if needed
+            was_running = self.qbt_manager.is_qbittorrent_running()
+            if was_running:
+                self.logger.info("qBittorrent is running - closing it to add rules...")
+                if not self.qbt_manager.close_qbittorrent():
+                    raise Exception("Failed to close qBittorrent")
+            
+            # Create backup
+            backup_file = self.qbt_manager.backup_rules()
+            self.logger.info(f"Created backup: {backup_file}")
+            
+            # Add new rules
+            new_rules = existing_rules.copy()
+            created_count = 0
+            
+            for show in shows_needing_rules:
+                title = show['title']
+                platform = show.get('platform', 'Unknown')
+                rule = self.qbt_manager.create_rule_template(title, platform)
+                new_rules[title] = rule
+                created_count += 1
+                self.logger.info(f"Created rule for: {title} ({platform})")
+            
+            # Save the updated rules
+            self.qbt_manager.save_rules(new_rules)
+            self.logger.info(f"Successfully added {created_count} new qBittorrent rules")
+            
+            # Restart qBittorrent if it was running
+            if was_running:
+                self.logger.info("Restarting qBittorrent...")
+                if self.qbt_manager.start_qbittorrent():
+                    self.logger.info("qBittorrent restarted successfully")
+                else:
+                    self.logger.warning("Failed to restart qBittorrent - please start manually")
+            
+            # Send Discord notification about new rules if configured
+            if self.discord_bot:
+                try:
+                    rule_names = [show['title'] for show in shows_needing_rules]
+                    
+                    # Create a simple success message instead of using error notification
+                    success_message = f"🔧 **qBittorrent Rules Created**\n\n"
+                    success_message += f"Created {created_count} new download rules:\n"
+                    success_message += "\n".join(f"• {name}" for name in rule_names)
+                    success_message += f"\n\n✅ Rules are enabled and ready to download"
+                    
+                    # Send as a simple webhook message instead of error notification
+                    import requests
+                    webhook_data = {
+                        "content": success_message,
+                        "username": "Guardian Monitor"
+                    }
+                    
+                    response = requests.post(self.discord_bot.webhook_url, json=webhook_data)
+                    if response.status_code == 204:
+                        self.logger.info("qBittorrent rules notification sent successfully")
+                    else:
+                        self.logger.warning(f"Failed to send qBittorrent notification: {response.status_code}")
+                        
+                except Exception as e:
+                    self.logger.warning(f"Failed to send qBittorrent notification: {e}")
+            
+        except Exception as e:
+            self.logger.error(f"Error managing qBittorrent rules: {e}")
+            # Try to restart qBittorrent if we closed it
+            if was_running:
+                try:
+                    self.qbt_manager.start_qbittorrent()
+                except:
+                    pass
+            raise
+    
     def _send_discord_notifications(self, article: Dict[str, str], shows: List[Dict[str, str]]) -> bool:
         """
         Send Discord notifications for new shows.
@@ -212,7 +347,8 @@ class GuardianMonitor:
                 'components': {
                     'scraper': 'initialized',
                     'storage': 'initialized',
-                    'discord': 'configured' if self.discord_bot else 'not configured'
+                    'discord': 'configured' if self.discord_bot else 'not configured',
+                    'qbittorrent': 'available' if self.qbt_manager else 'not available'
                 },
                 'configuration': config.get_summary(),
                 'storage': {
@@ -221,6 +357,18 @@ class GuardianMonitor:
                     'data_directory': storage_stats['data_directory']
                 }
             }
+            
+            # Add qBittorrent status if available
+            if self.qbt_manager:
+                try:
+                    status['qbittorrent'] = {
+                        'process_running': self.qbt_manager.is_qbittorrent_running(),
+                        'rules_file_exists': self.qbt_manager.rules_file.exists()
+                    }
+                except Exception as e:
+                    status['qbittorrent'] = {
+                        'error': str(e)
+                    }
             
             if last_checked:
                 status['last_checked'] = {

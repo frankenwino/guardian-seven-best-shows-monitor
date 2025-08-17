@@ -158,6 +158,9 @@ class ShowDataStorage:
                 'processed_at': datetime.now().isoformat()
             }
             
+            # Clean up old processed articles (keep only last 100)
+            self._cleanup_processed_articles(processed_data)
+            
             # Write back to file
             with open(self.processed_articles_file, 'w', encoding='utf-8') as f:
                 json.dump(processed_data, f, indent=2, ensure_ascii=False)
@@ -168,6 +171,103 @@ class ShowDataStorage:
         except IOError as e:
             logger.error(f"Error updating processed articles file: {e}")
             return False
+    
+    def _cleanup_processed_articles(self, processed_data: Dict, max_articles: int = 100) -> None:
+        """
+        Clean up old processed articles, keeping only the most recent ones.
+        
+        Args:
+            processed_data: The processed articles data dictionary
+            max_articles: Maximum number of articles to keep (default: 100)
+        """
+        try:
+            processed_urls = processed_data.get('processed_urls', [])
+            articles_info = processed_data.get('articles_info', {})
+            
+            if len(processed_urls) <= max_articles:
+                return  # No cleanup needed
+            
+            # Sort articles by processed_at timestamp (newest first)
+            # For articles without processed_at, use article date as fallback
+            def get_sort_key(url):
+                info = articles_info.get(url, {})
+                if 'processed_at' in info:
+                    return info['processed_at']
+                elif 'date' in info:
+                    return info['date'] + 'T00:00:00'  # Add time for ISO format
+                else:
+                    return '1900-01-01T00:00:00'  # Very old fallback
+            
+            sorted_urls = sorted(processed_urls, key=get_sort_key, reverse=True)
+            
+            # Keep only the most recent articles
+            urls_to_keep = sorted_urls[:max_articles]
+            urls_to_remove = sorted_urls[max_articles:]
+            
+            # Update the data
+            processed_data['processed_urls'] = urls_to_keep
+            
+            # Clean up articles_info for removed URLs
+            for url in urls_to_remove:
+                if url in articles_info:
+                    del articles_info[url]
+            
+            if urls_to_remove:
+                logger.info(f"Cleaned up {len(urls_to_remove)} old processed articles, kept {len(urls_to_keep)} most recent")
+                
+        except Exception as e:
+            logger.warning(f"Error during processed articles cleanup: {e}")
+    
+    def cleanup_processed_articles_manual(self, max_articles: int = 100) -> Dict:
+        """
+        Manually clean up processed articles file.
+        
+        Args:
+            max_articles: Maximum number of articles to keep
+            
+        Returns:
+            Dictionary with cleanup statistics
+        """
+        try:
+            if not self.processed_articles_file.exists():
+                return {'status': 'no_file', 'message': 'No processed articles file found'}
+            
+            # Load current data
+            with open(self.processed_articles_file, 'r', encoding='utf-8') as f:
+                processed_data = json.load(f)
+            
+            original_count = len(processed_data.get('processed_urls', []))
+            
+            if original_count <= max_articles:
+                return {
+                    'status': 'no_cleanup_needed',
+                    'message': f'Only {original_count} articles found, no cleanup needed (max: {max_articles})',
+                    'original_count': original_count,
+                    'final_count': original_count,
+                    'removed_count': 0
+                }
+            
+            # Perform cleanup
+            self._cleanup_processed_articles(processed_data, max_articles)
+            
+            # Save cleaned data
+            with open(self.processed_articles_file, 'w', encoding='utf-8') as f:
+                json.dump(processed_data, f, indent=2, ensure_ascii=False)
+            
+            final_count = len(processed_data.get('processed_urls', []))
+            removed_count = original_count - final_count
+            
+            return {
+                'status': 'success',
+                'message': f'Cleaned up {removed_count} old articles, kept {final_count} most recent',
+                'original_count': original_count,
+                'final_count': final_count,
+                'removed_count': removed_count
+            }
+            
+        except Exception as e:
+            logger.error(f"Error during manual processed articles cleanup: {e}")
+            return {'status': 'error', 'message': str(e)}
     
     def save_shows_data(self, article_url: str, article_title: str, 
                        article_date: str, shows: List[Dict[str, str]]) -> bool:
