@@ -6,7 +6,7 @@ Automated monitoring for The Guardian's weekly "Seven Best Shows to Stream" seri
 
 ```bash
 # 1. Clone and install
-git clone <repository-url>
+git clone https://github.com/frankenwino/guardian-seven-best-shows-monitor.git
 cd guardian-seven-best-shows-monitor
 python3 -m venv venv
 source venv/bin/activate
@@ -45,13 +45,16 @@ The Guardian publishes every Friday at 08:00 CET. Add to crontab:
 ## Configuration
 
 ### Discord Setup
+
 1. Server Settings → Integrations → Webhooks → Create New
 2. Copy webhook URL to `.env` file:
+
 ```env
 DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_TOKEN
 ```
 
 ### App Settings (`config.ini`)
+
 ```ini
 [guardian]
 series_url = https://www.theguardian.com/tv-and-radio/series/the-seven-best-shows-to-stream-this-week
@@ -78,6 +81,7 @@ log_to_file = false
 ## Discord Notifications
 
 Rich embeds with:
+
 - Article title and publication date
 - Direct link to Guardian article
 - Show details: title, platform, description
@@ -86,13 +90,16 @@ Rich embeds with:
 ## Troubleshooting
 
 **"Discord webhook not configured"**
+
 - Set `DISCORD_WEBHOOK_URL` in `.env` file
 
 **"No articles found"**
+
 - Check internet connection
 - Run `./guardian_monitor.py test`
 
 **Permission denied**
+
 - `chmod +x guardian_monitor.py`
 
 ## Storage Management
