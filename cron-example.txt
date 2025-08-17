@@ -1,0 +1,20 @@
+# Guardian Monitor - Cron Examples
+# Guardian publishes every Friday at 08:00 CET
+
+# RECOMMENDED: Two Friday checks
+30 8 * * 5 /path/to/project/venv/bin/python /path/to/project/guardian_monitor.py
+0 10 * * 5 /path/to/project/venv/bin/python /path/to/project/guardian_monitor.py
+
+# Single Friday check
+30 8 * * 5 /path/to/project/venv/bin/python /path/to/project/guardian_monitor.py
+
+# Conservative (3 checks)
+15 8 * * 5 /path/to/project/venv/bin/python /path/to/project/guardian_monitor.py
+0 9 * * 5 /path/to/project/venv/bin/python /path/to/project/guardian_monitor.py
+0 11 * * 5 /path/to/project/venv/bin/python /path/to/project/guardian_monitor.py
+
+# Setup: crontab -e → add line → save
+# Verify: crontab -l
+# Test: /path/to/project/venv/bin/python /path/to/project/guardian_monitor.py
+
+# Replace /path/to/project/ with your actual project directory path
