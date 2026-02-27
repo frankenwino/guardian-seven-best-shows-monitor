@@ -335,6 +335,7 @@ class QBittorrentRulesManager:
         # Clean title for mustContain (no punctuation + 1080)
         clean_title = self.clean_title_for_search(show_title)
         must_contain = f"{clean_title} 1080"
+        must_not_contain = "265|HEVC|H265|4K|2160|8K"
         
         # Create tags based on title word count
         # If title is one word: [title, "Guardian Best Shows"]
@@ -357,7 +358,7 @@ class QBittorrentRulesManager:
             "ignoreDays": 0,
             "lastMatch": "",
             "mustContain": must_contain,
-            "mustNotContain": "",
+            "mustNotContain": must_not_contain,
             "previouslyMatchedEpisodes": [],
             "priority": 0,
             "savePath": "",
@@ -415,7 +416,7 @@ class QBittorrentRulesManager:
                 for show, matches in shows_with_rules:
                     print(f"\n  📺 {show['title']}")
                     print(f"     Platform: {show['platform']}")
-                    if show['pick_of_the_week']:
+                    if show.get('pick_of_the_week'):
                         print(f"     ⭐ Pick of the week")
                     for match in matches[:3]:  # Show first 3 matches
                         print(f"     → {match}")

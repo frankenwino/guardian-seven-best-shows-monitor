@@ -287,7 +287,7 @@ class ShowDataStorage:
         try:
             # Load existing history
             history = []
-            if self.shows_history_file.exists():
+            if self.shows_history_file.exists() and self.shows_history_file.stat().st_size > 0:
                 with open(self.shows_history_file, 'r', encoding='utf-8') as f:
                     history = json.load(f)
             
