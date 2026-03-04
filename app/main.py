@@ -255,33 +255,6 @@ class GuardianMonitor:
                 else:
                     self.logger.warning("Failed to restart qBittorrent - please start manually")
             
-            # Send Discord notification about new rules if configured
-            if self.discord_bot:
-                try:
-                    rule_names = [show['title'] for show in shows_needing_rules]
-                    
-                    # Create a simple success message instead of using error notification
-                    success_message = f"🔧 **qBittorrent Rules Created**\n\n"
-                    success_message += f"Created {created_count} new download rules:\n"
-                    success_message += "\n".join(f"• {name}" for name in rule_names)
-                    success_message += f"\n\n✅ Rules are enabled and ready to download"
-                    
-                    # Send as a simple webhook message instead of error notification
-                    import requests
-                    webhook_data = {
-                        "content": success_message,
-                        "username": "Guardian Monitor"
-                    }
-                    
-                    response = requests.post(self.discord_bot.webhook_url, json=webhook_data)
-                    if response.status_code == 204:
-                        self.logger.info("qBittorrent rules notification sent successfully")
-                    else:
-                        self.logger.warning(f"Failed to send qBittorrent notification: {response.status_code}")
-                        
-                except Exception as e:
-                    self.logger.warning(f"Failed to send qBittorrent notification: {e}")
-            
         except Exception as e:
             self.logger.error(f"Error managing qBittorrent rules: {e}")
             # Try to restart qBittorrent if we closed it
