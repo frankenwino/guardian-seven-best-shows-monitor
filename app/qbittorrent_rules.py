@@ -335,7 +335,7 @@ class QBittorrentRulesManager:
         # Clean title for mustContain (no punctuation + 1080)
         clean_title = self.clean_title_for_search(show_title)
         must_contain = f"{clean_title} 1080"
-        must_not_contain = "265|HEVC|H265|4K|2160|8K"
+        must_not_contain = "4K|2160|8K"
         
         # Create tags: include both clean title and Guardian tag for all shows
         tags = [clean_title, "Guardian Best Shows"]
