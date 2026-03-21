@@ -324,8 +324,8 @@ class QBittorrentRulesManager:
     def clean_title_for_search(self, title: str) -> str:
         """Clean show title for search - remove punctuation and special characters."""
         import re
-        # Remove all punctuation and special characters, keep only alphanumeric and spaces
-        cleaned = re.sub(r'[^\w\s]', '', title)
+        # Replace punctuation/special characters with a space, keep only alphanumeric and spaces
+        cleaned = re.sub(r'[^\w\s]', ' ', title)
         # Replace multiple spaces with single space and strip
         cleaned = re.sub(r'\s+', ' ', cleaned).strip()
         return cleaned
