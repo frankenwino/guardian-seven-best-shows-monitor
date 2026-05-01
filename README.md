@@ -75,10 +75,15 @@ The Guardian publishes every Friday at 08:00 CET. Add to crontab:
 
 ### Discord Setup
 1. Server Settings → Integrations → Webhooks → Create New
-2. Copy webhook URL to `.env` file:
+2. Copy webhook URL to `.env` file
+3. For bulk message deletion, also add your bot token (Discord Developer Portal → Your App → Bot → Reset Token)
+
 ```env
 DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_TOKEN
+DISCORD_BOT_TOKEN=your_bot_token_here
 ```
+
+`DISCORD_WEBHOOK_URL` is required. `DISCORD_BOT_TOKEN` is only needed if you use the bulk-delete channel messages feature.
 
 ### App Settings (`config.ini`)
 ```ini
