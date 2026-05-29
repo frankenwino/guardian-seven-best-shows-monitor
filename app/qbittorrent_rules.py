@@ -37,8 +37,12 @@ class QBittorrentRulesManager:
     def is_qbittorrent_running(self) -> bool:
         """Check if qBittorrent is currently running."""
         try:
-            # Check for qbittorrent process
-            result = subprocess.run(['pgrep', '-f', 'qbittorrent'], 
+            result = subprocess.run(['pgrep', '-x', 'qbittorrent'], 
+                                  capture_output=True, text=True)
+            if result.returncode == 0:
+                return True
+            # Also check for qbittorrent-nox (headless variant)
+            result = subprocess.run(['pgrep', '-x', 'qbittorrent-nox'], 
                                   capture_output=True, text=True)
             return result.returncode == 0
         except Exception as e:
