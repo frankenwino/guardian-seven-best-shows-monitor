@@ -5,8 +5,9 @@ Handles tracking of processed articles and storing show data using JSON files.
 
 import json
 import os
+import shutil
 from datetime import datetime
-from typing import List, Dict, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 import logging
 from pathlib import Path
 
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 class ShowDataStorage:
     """Handles data persistence for the Guardian Seven Best Shows Monitor."""
     
-    def __init__(self, data_dir: str = None):
+    def __init__(self, data_dir: Optional[str] = None):
         """
         Initialize storage with data directory.
         
@@ -40,7 +41,58 @@ class ShowDataStorage:
         self.processed_articles_file = self.data_dir / "processed_articles.json"
         
         logger.info(f"Storage initialized with data directory: {self.data_dir}")
-    
+
+    def _safe_load_json(self, file_path: Path, default: Any, expected_type: Optional[type] = None) -> Any:
+        """
+        Safely load JSON from a file with corruption recovery.
+
+        Args:
+            file_path: Path to the JSON file
+            default: Default value to return on failure
+            expected_type: Expected top-level type (dict or list). If mismatch, returns default.
+
+        Returns:
+            Parsed JSON data or default value
+        """
+        try:
+            if not file_path.exists():
+                return default
+            content = file_path.read_text(encoding='utf-8')
+            if not content.strip():
+                return default
+            data = json.loads(content)
+            if expected_type is not None and not isinstance(data, expected_type):
+                logger.warning(f"Unexpected structure in {file_path.name} (expected {expected_type.__name__}), using default")
+                return default
+            return data
+        except (json.JSONDecodeError, IOError, PermissionError) as e:
+            logger.warning(f"Failed to load {file_path.name}, using default: {e}")
+            return default
+
+    def _safe_write_json(self, file_path: Path, data) -> bool:
+        """
+        Safely write JSON to a file, creating a .bak backup first.
+
+        Args:
+            file_path: Path to the JSON file
+            data: Data to serialize
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Backup existing file
+            if file_path.exists() and file_path.stat().st_size > 0:
+                bak_path = file_path.with_suffix(file_path.suffix + '.bak')
+                shutil.copy2(file_path, bak_path)
+
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            return True
+        except (IOError, PermissionError) as e:
+            logger.error(f"Error writing {file_path.name}: {e}")
+            return False
+
     def get_last_checked_article(self) -> Optional[Dict[str, str]]:
         """
         Get information about the last checked article.
@@ -48,19 +100,13 @@ class ShowDataStorage:
         Returns:
             Dictionary with last checked article info or None if no previous check
         """
-        try:
-            if self.last_checked_file.exists():
-                with open(self.last_checked_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    logger.info(f"Last checked article: {data.get('url', 'Unknown')}")
-                    return data
-        except (json.JSONDecodeError, IOError) as e:
-            logger.error(f"Error reading last checked file: {e}")
-        
-        return None
+        data = self._safe_load_json(self.last_checked_file, None, expected_type=dict)
+        if data:
+            logger.info(f"Last checked article: {data.get('url', 'Unknown')}")
+        return data  # type: ignore[return-value]
     
     def update_last_checked_article(self, article_url: str, article_title: str, 
-                                  article_date: str, check_timestamp: str = None) -> bool:
+                                  article_date: str, check_timestamp: Optional[str] = None) -> bool:
         """
         Update the last checked article information.
         
@@ -84,16 +130,10 @@ class ShowDataStorage:
             'last_updated': check_timestamp
         }
         
-        try:
-            with open(self.last_checked_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-            
+        success = self._safe_write_json(self.last_checked_file, data)
+        if success:
             logger.info(f"Updated last checked article: {article_title}")
-            return True
-            
-        except IOError as e:
-            logger.error(f"Error writing last checked file: {e}")
-            return False
+        return success
     
     def is_article_processed(self, article_url: str) -> bool:
         """
@@ -115,15 +155,8 @@ class ShowDataStorage:
         Returns:
             Set of processed article URLs
         """
-        try:
-            if self.processed_articles_file.exists():
-                with open(self.processed_articles_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    return set(data.get('processed_urls', []))
-        except (json.JSONDecodeError, IOError) as e:
-            logger.error(f"Error reading processed articles file: {e}")
-        
-        return set()
+        data = self._safe_load_json(self.processed_articles_file, {'processed_urls': []}, expected_type=dict)
+        return set(data.get('processed_urls', []))
     
     def add_processed_article(self, article_url: str, article_title: str, 
                             article_date: str, shows_count: int) -> bool:
@@ -141,10 +174,14 @@ class ShowDataStorage:
         """
         try:
             # Load existing data
-            processed_data = {'processed_urls': [], 'articles_info': {}}
-            if self.processed_articles_file.exists():
-                with open(self.processed_articles_file, 'r', encoding='utf-8') as f:
-                    processed_data = json.load(f)
+            processed_data = self._safe_load_json(
+                self.processed_articles_file,
+                {'processed_urls': [], 'articles_info': {}},
+                expected_type=dict
+            )
+            # Ensure required keys exist
+            processed_data.setdefault('processed_urls', [])
+            processed_data.setdefault('articles_info', {})
             
             # Add new article
             if article_url not in processed_data['processed_urls']:
@@ -162,11 +199,10 @@ class ShowDataStorage:
             self._cleanup_processed_articles(processed_data)
             
             # Write back to file
-            with open(self.processed_articles_file, 'w', encoding='utf-8') as f:
-                json.dump(processed_data, f, indent=2, ensure_ascii=False)
-            
-            logger.info(f"Added processed article: {article_title}")
-            return True
+            success = self._safe_write_json(self.processed_articles_file, processed_data)
+            if success:
+                logger.info(f"Added processed article: {article_title}")
+            return success
             
         except IOError as e:
             logger.error(f"Error updating processed articles file: {e}")
@@ -286,10 +322,7 @@ class ShowDataStorage:
         """
         try:
             # Load existing history
-            history = []
-            if self.shows_history_file.exists() and self.shows_history_file.stat().st_size > 0:
-                with open(self.shows_history_file, 'r', encoding='utf-8') as f:
-                    history = json.load(f)
+            history = self._safe_load_json(self.shows_history_file, [], expected_type=list)
             
             # Check if this article URL already exists in history
             for existing_entry in history:
@@ -311,11 +344,10 @@ class ShowDataStorage:
             history.insert(0, entry)
             
             # Write back to file (no artificial limit - keep all history)
-            with open(self.shows_history_file, 'w', encoding='utf-8') as f:
-                json.dump(history, f, indent=2, ensure_ascii=False)
-            
-            logger.info(f"Saved {len(shows)} shows from {article_title}")
-            return True
+            success = self._safe_write_json(self.shows_history_file, history)
+            if success:
+                logger.info(f"Saved {len(shows)} shows from {article_title}")
+            return success
             
         except IOError as e:
             logger.error(f"Error saving shows data: {e}")
@@ -331,15 +363,8 @@ class ShowDataStorage:
         Returns:
             List of show history entries
         """
-        try:
-            if self.shows_history_file.exists():
-                with open(self.shows_history_file, 'r', encoding='utf-8') as f:
-                    history = json.load(f)
-                    return history[:limit]
-        except (json.JSONDecodeError, IOError) as e:
-            logger.error(f"Error reading shows history: {e}")
-        
-        return []
+        history = self._safe_load_json(self.shows_history_file, [], expected_type=list)
+        return history[:limit]  # type: ignore[return-value]
     
     def get_shows_by_platform(self, platform: str, limit: int = 20) -> List[Dict[str, str]]:
         """
@@ -401,7 +426,7 @@ class ShowDataStorage:
         
         return matching_shows
     
-    def get_storage_stats(self) -> Dict[str, any]:
+    def get_storage_stats(self) -> Dict[str, Any]:
         """
         Get statistics about stored data.
         

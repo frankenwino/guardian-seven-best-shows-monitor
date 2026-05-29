@@ -179,6 +179,29 @@ python app/qbittorrent_rules.py cleanup
 python app/log_manager.py cleanup
 ```
 
+## Demo & Test Scripts
+
+These scripts interact with real processes and services. Use them for manual verification only.
+
+| Script | Purpose | Prerequisites |
+|--------|---------|---------------|
+| `demo_restart.py` | Demonstrates the qBittorrent close/restart workflow that occurs when new shows are found | qBittorrent installed |
+| `test_qbt_restart.py` | Verifies qBittorrent process control (start/stop) works correctly | qBittorrent installed |
+| `app/test_discord_sample.py` | Sends sample show notifications to Discord for visual verification | `DISCORD_WEBHOOK_URL` configured in `.env` |
+
+```bash
+# Demo qBittorrent restart workflow
+python demo_restart.py
+
+# Test qBittorrent process control
+python test_qbt_restart.py
+
+# Send sample Discord notifications
+python app/test_discord_sample.py
+```
+
+⚠️ These scripts perform real actions (close/start qBittorrent, send Discord messages). They are not automated tests.
+
 ## Project Structure
 
 ```

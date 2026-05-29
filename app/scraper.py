@@ -18,9 +18,11 @@ logger = logging.getLogger(__name__)
 class GuardianScraper:
     """Scraper for The Guardian's Seven Best Shows series."""
     
-    def __init__(self):
+    def __init__(self, series_urls: Optional[List[str]] = None):
         self.base_url = "https://www.theguardian.com"
-        self.series_url = "https://www.theguardian.com/tv-and-radio/series/the-seven-best-shows-to-stream-this-week"
+        self.series_urls = series_urls or [
+            "https://www.theguardian.com/tv-and-radio/series/the-seven-best-shows-to-stream-this-week"
+        ]
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -58,45 +60,46 @@ class GuardianScraper:
     
     def get_series_articles(self) -> List[Dict[str, str]]:
         """
-        Get all articles from the series index page.
+        Get all articles from all configured series index pages.
         
         Returns:
             List of dictionaries with article info (url, title, date)
         """
-        soup = self.fetch_page(self.series_url)
-        if not soup:
-            return []
-        
         articles = []
+        seen_urls: set[str] = set()
         
-        # Look for article links in the series page
-        # Guardian typically uses specific CSS classes for article listings
-        article_links = soup.find_all('a', href=True)
-        
-        for link in article_links:
-            href = link.get('href')
-            if not href:
+        for series_url in self.series_urls:
+            soup = self.fetch_page(series_url)
+            if not soup:
                 continue
-                
-            # Check if this is a "seven best shows" article
-            if self._is_seven_best_shows_article(href):
-                full_url = urljoin(self.base_url, href)
-                title = self._extract_title_from_link(link)
-                date = self._extract_date_from_url(href)
-                
-                # If we can't extract title from link, generate one from URL
-                if not title and date:
-                    title = f"Seven Best Shows to Stream This Week - {date}"
-                
-                if date:  # Only add if we have a date
-                    articles.append({
-                        'url': full_url,
-                        'title': title.strip() if title else f"Seven Best Shows - {date}",
-                        'date': date,
-                        'path': href
-                    })
+            
+            article_links = soup.find_all('a', href=True)
+            
+            for link in article_links:
+                href = link.get('href')
+                if not href or not isinstance(href, str):
+                    continue
+                    
+                if self._is_seven_best_shows_article(href):
+                    full_url = urljoin(self.base_url, href)
+                    if full_url in seen_urls:
+                        continue
+                    seen_urls.add(full_url)
+                    
+                    title = self._extract_title_from_link(link)
+                    date = self._extract_date_from_url(href)
+                    
+                    if not title and date:
+                        title = f"Seven Best Shows to Stream This Week - {date}"
+                    
+                    if date:
+                        articles.append({
+                            'url': full_url,
+                            'title': title.strip() if title else f"Seven Best Shows - {date}",
+                            'date': date,
+                            'path': href
+                        })
         
-        # Sort by date (newest first)
         articles.sort(key=lambda x: x['date'], reverse=True)
         
         logger.info(f"Found {len(articles)} articles in series")
@@ -107,18 +110,19 @@ class GuardianScraper:
         if not href:
             return False
             
-        # Pattern matching for Guardian seven best shows URLs
+        # Pattern matching for Guardian seven best shows/films URLs
         patterns = [
             r'/tv-and-radio/\d{4}/\w{3}/\d{2}/.+seven-best-shows',
             r'/tv-and-radio/\d{4}/\w{3}/\d{2}/.+best-shows-to-stream',
+            r'/tv-and-radio/\d{4}/\w{3}/\d{2}/.+best-films',
         ]
         
         for pattern in patterns:
             if re.search(pattern, href):
                 return True
         
-        # Also check for "seven-best" or "best-shows" in the URL
-        if 'seven-best' in href.lower() or 'best-shows-to-stream' in href.lower():
+        # Also check for "seven-best" or "best-shows" or "best-films" in the URL
+        if 'seven-best' in href.lower() or 'best-shows-to-stream' in href.lower() or 'best-films' in href.lower():
             # Make sure it's not just the series page itself and has a date pattern
             if '/series/' not in href and re.search(r'/\d{4}/', href):
                 return True

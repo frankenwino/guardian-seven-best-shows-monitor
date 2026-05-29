@@ -14,7 +14,7 @@ import time
 import gzip
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Set
+from typing import Dict, List, Optional, Set
 import logging
 
 # Setup logging
@@ -22,7 +22,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 class QBittorrentRulesManager:
-    def __init__(self, rules_file_path: str = None):
+    def __init__(self, rules_file_path: Optional[str] = None):
         """Initialize the rules manager."""
         if rules_file_path is None:
             # Default qBittorrent config path

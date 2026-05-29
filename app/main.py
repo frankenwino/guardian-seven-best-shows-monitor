@@ -10,7 +10,7 @@ import time
 import argparse
 import logging
 from datetime import datetime
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 
 from config import config
 from scraper import GuardianScraper
@@ -39,7 +39,7 @@ class GuardianMonitor:
         
         # Initialize components
         try:
-            self.scraper = GuardianScraper()
+            self.scraper = GuardianScraper(series_urls=config.guardian_series_urls)
             self.storage = ShowDataStorage(data_dir=str(config.get_data_directory_path()))
             self.discord_bot = GuardianDiscordBot() if config.is_discord_configured() else None
             
@@ -70,61 +70,61 @@ class GuardianMonitor:
         try:
             self.logger.info("Checking for new Guardian show recommendations...")
             
-            # Get latest articles
+            # Get all articles from all series
             articles = self.scraper.get_series_articles()
             if not articles:
                 self.logger.warning("No articles found in Guardian series")
                 return False
             
-            latest_article = articles[0]
-            self.logger.info(f"Latest article: {latest_article['title']} ({latest_article['date']})")
+            self.logger.info(f"Found {len(articles)} articles across all series")
             
-            # Check if already processed
-            if self.storage.is_article_processed(latest_article['url']):
-                self.logger.info("Article already processed - no new content")
-                return False
+            # Process all unprocessed articles
+            processed_count = 0
+            for article in articles:
+                if self.storage.is_article_processed(article['url']):
+                    continue
+                
+                self.logger.info(f"New article: {article['title']} ({article['date']})")
+                
+                shows = self.scraper.parse_show_recommendations(article['url'])
+                if not shows:
+                    self.logger.warning(f"No shows found in: {article['title']}")
+                    continue
+                
+                self.logger.info(f"Found {len(shows)} shows to process")
+                
+                # Save to storage
+                if not self._save_shows_data(article, shows):
+                    self.logger.error(f"Failed to save shows data for: {article['title']}")
+                    continue
+                
+                # Send Discord notification
+                if self.discord_bot:
+                    if not self._send_discord_notifications(article, shows):
+                        self.logger.error("Failed to send Discord notifications")
+                
+                # Create qBittorrent rules
+                if self.qbt_manager:
+                    try:
+                        self._manage_qbittorrent_rules(shows)
+                    except Exception as e:
+                        self.logger.error(f"Failed to manage qBittorrent rules: {e}")
+                        if self.discord_bot and config.send_error_notifications:
+                            try:
+                                self.discord_bot.send_error_notification(
+                                    f"qBittorrent rules error: {str(e)}",
+                                    "Error occurred while managing qBittorrent download rules"
+                                )
+                            except Exception as discord_error:
+                                self.logger.error(f"Failed to send qBittorrent error notification: {discord_error}")
+                
+                processed_count += 1
             
-            self.logger.info("New article found - processing shows...")
-            
-            # Parse shows from the article
-            shows = self.scraper.parse_show_recommendations(latest_article['url'])
-            if not shows:
-                self.logger.warning("No shows found in the article")
-                return False
-            
-            self.logger.info(f"Found {len(shows)} shows to process")
-            
-            # Save to storage
-            success = self._save_shows_data(latest_article, shows)
-            if not success:
-                self.logger.error("Failed to save shows data")
-                return False
-            
-            # Send Discord notification
-            if self.discord_bot:
-                success = self._send_discord_notifications(latest_article, shows)
-                if not success:
-                    self.logger.error("Failed to send Discord notifications")
-                    # Don't return False here - data was still processed successfully
-            
-            # Check and create qBittorrent rules if available
-            if self.qbt_manager:
-                try:
-                    self._manage_qbittorrent_rules(shows)
-                except Exception as e:
-                    self.logger.error(f"Failed to manage qBittorrent rules: {e}")
-                    # Send error notification if Discord is configured
-                    if self.discord_bot and config.send_error_notifications:
-                        try:
-                            self.discord_bot.send_error_notification(
-                                f"qBittorrent rules error: {str(e)}",
-                                "Error occurred while managing qBittorrent download rules"
-                            )
-                        except Exception as discord_error:
-                            self.logger.error(f"Failed to send qBittorrent error notification: {discord_error}")
-            
-            self.logger.info(f"Successfully processed {len(shows)} new shows")
-            return True
+            if processed_count > 0:
+                self.logger.info(f"Successfully processed {processed_count} new article(s)")
+            else:
+                self.logger.info("No new articles to process")
+            return processed_count > 0
             
         except Exception as e:
             self.logger.error(f"Error checking for new shows: {e}")
@@ -301,7 +301,7 @@ class GuardianMonitor:
         self.logger.info("Running check for new shows")
         return self.check_for_new_shows()
     
-    def get_status(self) -> Dict[str, any]:
+    def get_status(self) -> Dict[str, Any]:
         """
         Get current status of the monitor.
         

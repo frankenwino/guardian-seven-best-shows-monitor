@@ -6,6 +6,7 @@ Loads configuration from config.ini file and secrets from .env file.
 import os
 import configparser
 from pathlib import Path
+from typing import Optional
 from dotenv import load_dotenv
 import logging
 from datetime import datetime
@@ -13,7 +14,7 @@ from datetime import datetime
 class Config:
     """Configuration class that loads settings from config.ini and secrets from .env."""
     
-    def __init__(self, config_path: str = None, env_path: str = None):
+    def __init__(self, config_path: Optional[str] = None, env_path: Optional[str] = None):
         """
         Initialize configuration by loading from config files.
         
@@ -32,7 +33,7 @@ class Config:
         # Validate configuration
         self._validate_config()
     
-    def _load_env_file(self, env_path: str = None):
+    def _load_env_file(self, env_path: Optional[str] = None):
         """Load environment variables from .env file."""
         if env_path:
             load_dotenv(env_path)
@@ -46,7 +47,7 @@ class Config:
         # Load secrets from environment
         self.discord_webhook_url = os.getenv('DISCORD_WEBHOOK_URL')
     
-    def _load_config_file(self, config_path: str = None):
+    def _load_config_file(self, config_path: Optional[str] = None):
         """Load configuration from INI file."""
         if config_path:
             config_file = Path(config_path)
@@ -61,7 +62,10 @@ class Config:
         
         # Guardian Configuration
         guardian_section = config['guardian']
-        self.guardian_series_url = guardian_section.get('series_url')
+        # Support series_urls (list) with fallback to series_url (singular)
+        raw_urls = guardian_section.get('series_urls') or guardian_section.get('series_url') or ''
+        self.guardian_series_urls: list[str] = [u.strip() for u in raw_urls.split(',') if u.strip()]
+        self.guardian_series_url = self.guardian_series_urls[0] if self.guardian_series_urls else ''
         self.guardian_base_url = guardian_section.get('base_url')
         
         # Application Settings
@@ -70,7 +74,7 @@ class Config:
         
         # Storage Settings
         storage_section = config['storage']
-        self.data_directory = storage_section.get('data_directory')
+        self.data_directory = storage_section.get('data_directory') or 'data'
         
         # HTTP Settings
         http_section = config['http']
@@ -81,7 +85,7 @@ class Config:
         
         # Logging Settings
         logging_section = config['logging']
-        self.log_level = logging_section.get('log_level').upper()
+        self.log_level = (logging_section.get('log_level') or 'INFO').upper()
         self.log_to_file = logging_section.getboolean('log_to_file')
         self.log_file = logging_section.get('log_file')
     
@@ -103,8 +107,11 @@ class Config:
             logging.warning(f"Invalid LOG_LEVEL, using default 'INFO'")
         
         # Validate URLs
-        if not self.guardian_series_url.startswith('http'):
-            raise ValueError(f"Invalid guardian series URL: {self.guardian_series_url}")
+        if not self.guardian_series_urls:
+            raise ValueError("No guardian series URLs configured")
+        for url in self.guardian_series_urls:
+            if not url.startswith('http'):
+                raise ValueError(f"Invalid guardian series URL: {url}")
         
         if not self.guardian_base_url.startswith('http'):
             raise ValueError(f"Invalid guardian base URL: {self.guardian_base_url}")
@@ -222,7 +229,7 @@ class Config:
         """
         return {
             'discord_configured': self.is_discord_configured(),
-            'guardian_series_url': self.guardian_series_url,
+            'guardian_series_urls': self.guardian_series_urls,
             'send_error_notifications': self.send_error_notifications,
             'data_directory': str(self.get_data_directory_path()),
             'log_level': self.log_level,
@@ -241,7 +248,8 @@ class Config:
         lines.append(f'    configured: {summary["discord_configured"]}')
         
         lines.append('  Guardian:')
-        lines.append(f'    series_url: {summary["guardian_series_url"]}')
+        for url in summary["guardian_series_urls"]:
+            lines.append(f'    series_url: {url}')
         
         lines.append('  Application:')
         lines.append(f'    send_error_notifications: {summary["send_error_notifications"]}')

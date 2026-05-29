@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class GuardianDiscordBot:
     """Discord bot for sending Guardian Seven Best Shows notifications."""
     
-    def __init__(self, env_path: str = None):
+    def __init__(self, env_path: Optional[str] = None):
         """
         Initialize Discord bot with webhook configuration.
         
@@ -138,7 +138,7 @@ class GuardianDiscordBot:
             logger.error(f"Error sending Discord notification: {e}")
             return False
     
-    def send_error_notification(self, error_message: str, context: str = None) -> bool:
+    def send_error_notification(self, error_message: str, context: Optional[str] = None) -> bool:
         """
         Send error notification to Discord.
         
