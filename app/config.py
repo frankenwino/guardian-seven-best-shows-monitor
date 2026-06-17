@@ -268,8 +268,23 @@ class Config:
         return '\n'.join(lines)
 
 
-# Global configuration instance
-config = Config()
+# Lazy configuration singleton
+_config_instance: Optional['Config'] = None
+
+
+def get_config() -> 'Config':
+    """Get or create the global config instance."""
+    global _config_instance
+    if _config_instance is None:
+        _config_instance = Config()
+    return _config_instance
+
+
+# For backward compatibility - lazy property via module __getattr__
+def __getattr__(name: str):
+    if name == 'config':
+        return get_config()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def main():
@@ -278,19 +293,21 @@ def main():
     print("=" * 40)
     
     try:
+        cfg = get_config()
+        
         # Setup logging
-        config.setup_logging()
+        cfg.setup_logging()
         
         # Print configuration summary
-        print(config)
+        print(cfg)
         
         # Test specific settings
-        print(f"\nDiscord configured: {config.is_discord_configured()}")
-        print(f"Data directory: {config.get_data_directory_path()}")
-        print(f"Guardian series URL: {config.guardian_series_url}")
-        print(f"Send error notifications: {config.send_error_notifications}")
+        print(f"\nDiscord configured: {cfg.is_discord_configured()}")
+        print(f"Data directory: {cfg.get_data_directory_path()}")
+        print(f"Guardian series URL: {cfg.guardian_series_url}")
+        print(f"Send error notifications: {cfg.send_error_notifications}")
         
-        if config.is_discord_configured():
+        if cfg.is_discord_configured():
             print("✅ Discord webhook is configured")
         else:
             print("⚠️  Discord webhook not configured - notifications will be disabled")

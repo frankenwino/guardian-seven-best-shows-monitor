@@ -6,9 +6,9 @@ Tests the complete workflow: scraping -> storage -> Discord notification.
 
 import os
 import sys
-from scraper import GuardianScraper
-from storage import ShowDataStorage
-from discord_bot import GuardianDiscordBot
+from .scraper import GuardianScraper
+from .storage import ShowDataStorage
+from .discord_bot import GuardianDiscordBot
 
 def test_complete_workflow():
     """Test the complete workflow without sending Discord notifications."""

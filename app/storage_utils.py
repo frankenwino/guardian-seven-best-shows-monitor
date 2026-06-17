@@ -6,7 +6,7 @@ Provides command-line interface for managing stored data.
 
 import argparse
 import sys
-from storage import ShowDataStorage
+from .storage import ShowDataStorage
 from datetime import datetime
 
 def show_stats(storage):
@@ -119,7 +119,7 @@ def cleanup_processed_articles(storage, max_articles=100):
         import sys
         from pathlib import Path
         sys.path.append(str(Path(__file__).parent))
-        from storage import ShowDataStorage
+        from .storage import ShowDataStorage
         
         storage_manager = ShowDataStorage()
         result = storage_manager.cleanup_processed_articles_manual(max_articles)

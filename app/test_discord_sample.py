@@ -4,7 +4,7 @@ Test Discord integration with sample data.
 This demonstrates what the Discord notifications will look like.
 """
 
-from discord_bot import GuardianDiscordBot
+from .discord_bot import GuardianDiscordBot
 import os
 
 def main():

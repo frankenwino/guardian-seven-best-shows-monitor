@@ -5,14 +5,14 @@ from pathlib import Path
 
 import pytest
 
-# Add app directory to path so tests can import modules
-sys.path.insert(0, str(Path(__file__).parent.parent / "app"))
+# Add project root to path so tests can import the app package
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 @pytest.fixture
 def storage(tmp_path):
     """Create a ShowDataStorage instance using a temporary directory."""
-    from storage import ShowDataStorage
+    from app.storage import ShowDataStorage
 
     return ShowDataStorage(data_dir=str(tmp_path))
 

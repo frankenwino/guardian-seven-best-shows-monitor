@@ -12,14 +12,14 @@ import logging
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
-from config import config
-from scraper import GuardianScraper
-from storage import ShowDataStorage
-from discord_bot import GuardianDiscordBot
+from .config import config
+from .scraper import GuardianScraper
+from .storage import ShowDataStorage
+from .discord_bot import GuardianDiscordBot
 
 # Import qBittorrent rules manager
 try:
-    from qbittorrent_rules import QBittorrentRulesManager
+    from .qbittorrent_rules import QBittorrentRulesManager
     QBITTORRENT_AVAILABLE = True
 except ImportError:
     QBITTORRENT_AVAILABLE = False
@@ -39,7 +39,13 @@ class GuardianMonitor:
         
         # Initialize components
         try:
-            self.scraper = GuardianScraper(series_urls=config.guardian_series_urls)
+            self.scraper = GuardianScraper(
+                series_urls=config.guardian_series_urls,
+                timeout=config.request_timeout,
+                user_agent=config.user_agent,
+                retry_attempts=config.retry_attempts,
+                retry_delay=config.retry_delay
+            )
             self.storage = ShowDataStorage(data_dir=str(config.get_data_directory_path()))
             self.discord_bot = GuardianDiscordBot() if config.is_discord_configured() else None
             

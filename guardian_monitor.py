@@ -6,14 +6,9 @@ Designed for single-run execution (e.g., via cron job).
 """
 
 import sys
-import os
 from pathlib import Path
 
-# Add app directory to Python path
-app_dir = Path(__file__).parent / 'app'
-sys.path.insert(0, str(app_dir))
-
-from main import main as run_main
+from app.main import main as run_main
 
 def print_usage():
     """Print usage information."""

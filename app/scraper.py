@@ -9,22 +9,24 @@ from datetime import datetime
 from urllib.parse import urljoin, urlparse
 import re
 import logging
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Any, Tuple
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class GuardianScraper:
     """Scraper for The Guardian's Seven Best Shows series."""
     
-    def __init__(self, series_urls: Optional[List[str]] = None):
+    def __init__(self, series_urls: Optional[List[str]] = None, timeout: int = 10, user_agent: Optional[str] = None, retry_attempts: int = 3, retry_delay: int = 5):
         self.base_url = "https://www.theguardian.com"
         self.series_urls = series_urls or [
             "https://www.theguardian.com/tv-and-radio/series/the-seven-best-shows-to-stream-this-week"
         ]
+        self.timeout = timeout
+        self.retry_attempts = retry_attempts
+        self.retry_delay = retry_delay
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'User-Agent': user_agent or 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
             'Accept-Encoding': 'gzip, deflate',
@@ -43,20 +45,26 @@ class GuardianScraper:
         Returns:
             BeautifulSoup object or None if failed
         """
-        try:
-            logger.info(f"Fetching: {url}")
-            response = self.session.get(url, timeout=10)
-            response.raise_for_status()
-            
-            soup = BeautifulSoup(response.content, 'html.parser')
-            return soup
-            
-        except requests.RequestException as e:
-            logger.error(f"Error fetching {url}: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"Unexpected error parsing {url}: {e}")
-            return None
+        import time
+        
+        for attempt in range(1, self.retry_attempts + 1):
+            try:
+                logger.info(f"Fetching: {url} (attempt {attempt}/{self.retry_attempts})")
+                response = self.session.get(url, timeout=self.timeout)
+                response.raise_for_status()
+                return BeautifulSoup(response.content, 'html.parser')
+                
+            except requests.RequestException as e:
+                logger.warning(f"Attempt {attempt} failed for {url}: {e}")
+                if attempt < self.retry_attempts:
+                    time.sleep(self.retry_delay)
+                else:
+                    logger.error(f"All {self.retry_attempts} attempts failed for {url}")
+            except Exception as e:
+                logger.error(f"Unexpected error parsing {url}: {e}")
+                return None
+        
+        return None
     
     def get_series_articles(self) -> List[Dict[str, str]]:
         """
@@ -110,20 +118,21 @@ class GuardianScraper:
         if not href:
             return False
             
-        # Pattern matching for Guardian seven best shows/films URLs
+        # Pattern matching for Guardian seven best shows URLs
         patterns = [
             r'/tv-and-radio/\d{4}/\w{3}/\d{2}/.+seven-best-shows',
             r'/tv-and-radio/\d{4}/\w{3}/\d{2}/.+best-shows-to-stream',
-            r'/tv-and-radio/\d{4}/\w{3}/\d{2}/.+best-films',
         ]
         
         for pattern in patterns:
             if re.search(pattern, href):
                 return True
         
-        # Also check for "seven-best" or "best-shows" or "best-films" in the URL
-        if 'seven-best' in href.lower() or 'best-shows-to-stream' in href.lower() or 'best-films' in href.lower():
-            # Make sure it's not just the series page itself and has a date pattern
+        # Also check for "seven-best" or "best-shows" in the URL
+        if 'seven-best' in href.lower() or 'best-shows-to-stream' in href.lower():
+            # Exclude film articles and series page itself
+            if 'film' in href.lower():
+                return False
             if '/series/' not in href and re.search(r'/\d{4}/', href):
                 return True
         
@@ -195,7 +204,7 @@ class GuardianScraper:
         logger.info("No new articles found since last check")
         return None
     
-    def parse_show_recommendations(self, article_url: str) -> List[Dict[str, str]]:
+    def parse_show_recommendations(self, article_url: str) -> List[Dict[str, Any]]:
         """
         Parse TV show recommendations from a Guardian article.
         
@@ -229,7 +238,7 @@ class GuardianScraper:
         # If no shows found with h2, try other methods
         if not shows:
             # Method 2: Look for numbered headings (h2, h3)
-            headings = soup.find_all(['h2', 'h3'], string=re.compile(r'^\d+\.'))
+            headings = article_content.find_all(re.compile(r'^h[23]$'), string=re.compile(r'^\d+\.'))  # type: ignore[call-overload]
             
             for heading in headings:
                 show_data = self._parse_show_from_heading(heading)
@@ -238,7 +247,7 @@ class GuardianScraper:
         
         # Method 3: Look for strong/bold text with numbers
         if not shows:
-            numbered_elements = soup.find_all(['strong', 'b'], string=re.compile(r'^\d+\.'))
+            numbered_elements = soup.find_all(re.compile(r'^(strong|b)$'), string=re.compile(r'^\d+\.'))  # type: ignore[call-overload]
             for element in numbered_elements:
                 show_data = self._parse_show_from_element(element)
                 if show_data:
@@ -251,7 +260,7 @@ class GuardianScraper:
         logger.info(f"Parsed {len(shows)} shows from {article_url}")
         return shows  # Return all shows found
     
-    def _parse_show_from_guardian_heading(self, heading) -> Optional[Dict[str, str]]:
+    def _parse_show_from_guardian_heading(self, heading) -> Optional[Dict[str, Any]]:
         """Parse show data from Guardian's h2 heading structure."""
         title_text = heading.get_text(strip=True)
         
@@ -313,7 +322,7 @@ class GuardianScraper:
         
         return None
     
-    def _parse_show_from_heading(self, heading) -> Optional[Dict[str, str]]:
+    def _parse_show_from_heading(self, heading) -> Optional[Dict[str, Any]]:
         """Parse show data starting from a heading element."""
         title_text = heading.get_text(strip=True)
         
@@ -340,8 +349,7 @@ class GuardianScraper:
         
         # Find next siblings for description
         current = heading.next_sibling
-        description_parts = []
-        
+        description_parts: list[str] = []
         while current and len(description_parts) < 3:  # Limit to avoid getting too much
             if hasattr(current, 'name'):
                 if current.name in ['p']:
@@ -364,7 +372,7 @@ class GuardianScraper:
             'pick_of_the_week': pick_of_the_week
         }
     
-    def _parse_show_from_element(self, element) -> Optional[Dict[str, str]]:
+    def _parse_show_from_element(self, element) -> Optional[Dict[str, Any]]:
         """Parse show data starting from a bold/strong element."""
         title_text = element.get_text(strip=True)
         
@@ -404,7 +412,7 @@ class GuardianScraper:
             'pick_of_the_week': pick_of_the_week
         }
     
-    def _parse_shows_from_body(self, soup) -> List[Dict[str, str]]:
+    def _parse_shows_from_body(self, soup) -> List[Dict[str, Any]]:
         """Fallback method to parse shows from article body."""
         shows = []
         

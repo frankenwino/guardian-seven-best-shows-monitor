@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 from bs4 import BeautifulSoup
 
-from scraper import GuardianScraper
+from app.scraper import GuardianScraper
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -39,13 +39,13 @@ class TestIsSevenBestShowsArticle:
     def test_none_rejected(self, scraper):
         assert scraper._is_seven_best_shows_article(None) is False
 
-    def test_valid_films_url(self, scraper):
+    def test_films_url_rejected(self, scraper):
         url = "/tv-and-radio/2026/may/29/best-films-to-watch-on-tv-this-week"
-        assert scraper._is_seven_best_shows_article(url) is True
+        assert scraper._is_seven_best_shows_article(url) is False
 
-    def test_valid_films_url_alternate(self, scraper):
+    def test_films_url_alternate_rejected(self, scraper):
         url = "/tv-and-radio/2026/jan/10/seven-best-films-to-watch"
-        assert scraper._is_seven_best_shows_article(url) is True
+        assert scraper._is_seven_best_shows_article(url) is False
 
 
 class TestExtractDateFromUrl:

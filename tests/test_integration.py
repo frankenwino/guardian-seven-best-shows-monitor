@@ -2,7 +2,7 @@
 
 import pytest
 
-from scraper import GuardianScraper
+from app.scraper import GuardianScraper
 
 
 @pytest.mark.integration

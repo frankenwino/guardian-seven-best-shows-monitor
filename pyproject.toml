@@ -16,7 +16,3 @@ module = [
     "bs4.*",
 ]
 ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "scraper"
-disable_error_code = ["call-overload", "arg-type", "dict-item", "return-value", "var-annotated"]
