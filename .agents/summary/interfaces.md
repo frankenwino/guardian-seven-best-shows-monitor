@@ -1,98 +1,103 @@
 # Interfaces
 
-<!-- metadata:type=interfaces, audience=ai-agents, updated=2026-05-29 -->
+<!-- metadata:type=interfaces, scope=cli-and-external -->
 
-## CLI Interface
+## CLI Interfaces
 
-### guardian_monitor.py
+### guardian_monitor.py (Main CLI)
 
-| Command | Description |
-|---------|-------------|
-| `./guardian_monitor.py` or `run` | Check for new shows (default) |
-| `./guardian_monitor.py test` | Test all components |
-| `./guardian_monitor.py status` | Show current status |
-| `./guardian_monitor.py config` | Show configuration |
-| `./guardian_monitor.py help` | Show usage |
+| Command | Description | Exit Codes |
+|---------|-------------|-----------|
+| `./guardian_monitor.py` | Check for new shows (default=run) | 0=success, 1=error |
+| `./guardian_monitor.py run` | Same as no argument | |
+| `./guardian_monitor.py test` | Test all components (scraper, storage, Discord) | |
+| `./guardian_monitor.py status` | Show last checked article, history stats | |
+| `./guardian_monitor.py config` | Display current configuration | |
+| `./guardian_monitor.py help` | Print usage information | |
 
-### app/qbittorrent_rules.py
+### app/qbittorrent_rules.py (Standalone CLI)
 
-| Command | Description |
-|---------|-------------|
-| `analyze` | Compare shows vs existing qBittorrent rules |
-| `create` | Preview rules that would be created |
-| `create --apply` | Create rules (requires qBittorrent closed) |
-| `create --apply --auto-qbt` | Create rules with automatic qBittorrent management |
-| `status` | Check qBittorrent process status |
-| `backups` | Show backup files status |
-| `cleanup` | Clean up old backup files |
+| Command | Flags | Description |
+|---------|-------|-------------|
+| `python app/qbittorrent_rules.py analyze` | | Compare shows vs existing qBittorrent rules |
+| `python app/qbittorrent_rules.py create` | | Preview rules that would be created |
+| `python app/qbittorrent_rules.py create` | `--apply` | Write rules (requires qBittorrent closed) |
+| `python app/qbittorrent_rules.py create` | `--apply --auto-qbt` | Close/write/restart qBittorrent automatically |
+| `python app/qbittorrent_rules.py status` | | Check qBittorrent process status |
+| `python app/qbittorrent_rules.py backups` | | Show backup files status |
+| `python app/qbittorrent_rules.py cleanup` | | Remove old backup files (keeps 10) |
 
-### app/storage_utils.py
+### app/storage_utils.py (Standalone CLI)
 
-| Command | Description |
-|---------|-------------|
-| `stats` | Show storage statistics |
-| `history --limit N` | Show recent history |
-| `search <query>` | Search shows by text |
-| `platform <name>` | Filter shows by platform |
-| `cleanup --days N` | Remove old data |
-| `cleanup-articles --max N` | Cap processed articles list |
-| `duplicates` | Remove duplicate history entries |
-| `reset` | Delete all stored data |
+| Command | Flags | Description |
+|---------|-------|-------------|
+| `python app/storage_utils.py stats` | | Show storage statistics |
+| `python app/storage_utils.py search <query>` | | Search shows by text |
+| `python app/storage_utils.py history` | `--limit N` | View recent show history |
+| `python app/storage_utils.py cleanup-articles` | `--max N` | Cap processed articles list |
+| `python app/storage_utils.py filter <platform>` | | Filter shows by platform |
 
-### app/log_manager.py
+### app/log_manager.py (Standalone CLI)
 
 | Command | Description |
 |---------|-------------|
-| `status` | Show log files status |
-| `cleanup` | Remove old log files (keeps 10) |
+| `python app/log_manager.py status` | Show log file statistics |
+| `python app/log_manager.py cleanup` | Remove old log files (keeps 10) |
 
 ## External Integrations
 
-### The Guardian Website (Inbound Data)
+### The Guardian Website
 
-```mermaid
-graph LR
-    SCRAPER[GuardianScraper] -->|GET| SERIES[Series Index Page]
-    SCRAPER -->|GET| ARTICLE[Individual Article Pages]
-    SERIES -->|HTML| SCRAPER
-    ARTICLE -->|HTML| SCRAPER
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| Series index page(s) | GET | List available articles |
+| Individual article page | GET | Parse show recommendations |
+
+Configured in `config.ini` under `[guardian]`:
+- `series_urls` — comma-separated list of series index URLs
+- `base_url` — base URL for resolving relative links
+
+### Discord Webhook API
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| Webhook URL | POST | Send rich embed notifications |
+
+Configured via `.env`:
+- `DISCORD_WEBHOOK_URL` — webhook endpoint (required for notifications)
+- `DISCORD_BOT_TOKEN` — bot token (optional, for bulk message deletion)
+
+### qBittorrent
+
+| Interface | Method | Purpose |
+|-----------|--------|---------|
+| Process control | `pgrep`/`pkill` | Check/stop/start process |
+| Config file | Direct file I/O | Read/write RSS download rules |
+
+Default rules file: `~/.config/qBittorrent/rss/download_rules.json`
+
+## Internal APIs (Python)
+
+### GuardianScraper
+```python
+scraper = GuardianScraper(series_urls=["..."])
+articles: List[Dict] = scraper.get_series_articles()
+shows: List[Dict] = scraper.parse_show_recommendations(article_url)
 ```
 
-- **Series URL**: `https://www.theguardian.com/tv-and-radio/series/the-seven-best-shows-to-stream-this-week`
-- **Protocol**: HTTPS GET with browser-like User-Agent
-- **Rate limiting**: Sequential requests with configurable timeout
-- **Retry**: Configurable retry attempts with delay
-
-### Discord Webhook (Outbound Notifications)
-
-```mermaid
-graph LR
-    BOT[GuardianDiscordBot] -->|POST webhook| DISCORD[Discord API]
+### ShowDataStorage
+```python
+storage = ShowDataStorage(data_dir="data")
+storage.is_article_processed(url) -> bool
+storage.add_processed_article(url)
+storage.save_shows_data(article_dict, shows_list)
+storage.search_shows(query) -> List[Dict]
+storage.get_storage_stats() -> Dict
 ```
 
-- **Protocol**: HTTPS POST via `discord-webhook` library
-- **Auth**: Webhook URL contains embedded credentials
-- **Payload**: Rich embeds with show details, article links, platform info
-- **Error notifications**: Separate embed format for error alerts
-
-### qBittorrent (Local Process + File)
-
-```mermaid
-graph LR
-    QBT[QBittorrentRulesManager] -->|Read/Write| FILE[~/.config/qBittorrent/rss/download_rules.json]
-    QBT -->|pgrep/pkill| PROC[qBittorrent Process]
+### GuardianDiscordBot
+```python
+bot = GuardianDiscordBot()
+bot.send_new_shows_alert(title, date, url, shows) -> bool
+bot.send_error_notification(error_msg) -> bool
 ```
-
-- **Rules file**: `~/.config/qBittorrent/rss/download_rules.json`
-- **Process control**: `pgrep`, `pkill -TERM`, `pkill -KILL`, `Popen`
-- **Backup**: Gzip-compressed copies in `~/.config/qBittorrent/rss/backups/`
-
-## Internal Module Interfaces
-
-### Config → All Modules
-All modules import the global `config` singleton from `app/config.py`. Key attributes:
-- `config.guardian_series_url` — URL to scrape
-- `config.discord_webhook_url` — Discord webhook
-- `config.request_timeout` — HTTP timeout
-- `config.get_data_directory_path()` — data storage path
-- `config.is_discord_configured()` — feature flag for Discord

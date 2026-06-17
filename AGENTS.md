@@ -1,6 +1,6 @@
 # AGENTS.md
 
-<!-- metadata:type=agent-guide, updated=2026-05-29 -->
+<!-- metadata:type=agent-guide, updated=2026-06-17 -->
 
 ## Project Overview
 
@@ -25,6 +25,8 @@ config.ini                   → App settings (URLs, timeouts, logging)
 .env                         → Secrets (DISCORD_WEBHOOK_URL, DISCORD_BOT_TOKEN)
 data/                        → JSON persistence (git-ignored)
 logs/                        → Timestamped log files (git-ignored)
+tests/                       → Pytest unit tests (test_scraper, test_storage, test_integration)
+specs/                       → Feature specifications (pytest config, JSON validation, type checking)
 ```
 
 ## Architecture
@@ -45,12 +47,13 @@ graph LR
 - Config singleton (`from config import config`) used everywhere
 - Graceful degradation: Discord and qBittorrent are optional
 - Idempotent: `processed_articles.json` prevents duplicate processing
+- Cascading scraper: tries 4 parsing strategies because Guardian article format varies
 
 ## Configuration
 
 | Source | Contains | Tracked in Git |
 |--------|----------|----------------|
-| `config.ini` | URLs, timeouts, log settings, data path | Yes |
+| `config.ini` | URLs, timeouts, log settings, data path, HTTP settings | Yes |
 | `.env` | `DISCORD_WEBHOOK_URL`, `DISCORD_BOT_TOKEN` | No (`.env.example` tracked) |
 
 Config is loaded once at module import time via the global `config` instance in `app/config.py`.
@@ -67,9 +70,16 @@ Config is loaded once at module import time via the global `config` instance in 
 
 - **Scraper uses cascading parsing**: Tries h2 headings → numbered h2/h3 → bold numbered text → body parsing. This is because The Guardian's article format varies.
 - **qBittorrent rules management** requires closing the qBittorrent process to write its config file. The code handles close → backup → write → restart with rollback on failure.
-- **No formal test framework**: Test files use `if __name__ == "__main__"` pattern, not pytest.
 - **sys.path manipulation**: `guardian_monitor.py` adds `app/` to `sys.path` at runtime to import modules without a package structure.
 - **Scheduling**: Designed for Friday-only cron execution (Guardian publishes Fridays 08:00 CET). Recommended: `30 8 * * 5` and `0 10 * * 5`.
+- **Multiple series**: Monitors both "Seven Best Shows to Stream" and "Seven Best Films to Watch on TV" series.
+- **Storage safety**: JSON writes use corruption recovery (safe load with fallback to defaults) and backup-on-write.
+
+## Testing
+
+- **pytest** (`tests/`): Unit tests for scraper, storage, and integration tests requiring network
+- **Manual test scripts** (`app/test_integration.py`, `app/test_discord_sample.py`, `demo_restart.py`, `test_qbt_restart.py`): Use `if __name__ == "__main__"` pattern
+- **mypy**: Configured in `pyproject.toml` targeting Python 3.10
 
 ## Detailed Documentation
 

@@ -1,92 +1,97 @@
 # Workflows
 
-<!-- metadata:type=workflows, audience=ai-agents, updated=2026-05-29 -->
+<!-- metadata:type=workflows, scope=processes -->
 
 ## Primary Workflow: Check for New Shows
 
 ```mermaid
 flowchart TD
-    START[Cron triggers guardian_monitor.py] --> INIT[Initialize GuardianMonitor]
-    INIT --> SCRAPE[Scrape series index page]
-    SCRAPE --> ARTICLES{Articles found?}
-    ARTICLES -->|No| EXIT_NONE[Exit: no articles]
-    ARTICLES -->|Yes| CHECK[Check if latest article is processed]
-    CHECK --> PROCESSED{Already processed?}
-    PROCESSED -->|Yes| EXIT_DUP[Exit: no new content]
-    PROCESSED -->|No| PARSE[Parse show recommendations from article]
-    PARSE --> SHOWS{Shows found?}
-    SHOWS -->|No| EXIT_EMPTY[Exit: no shows in article]
-    SHOWS -->|Yes| SAVE[Save to shows_history.json]
+    START[Cron triggers guardian_monitor.py] --> INIT[Initialize components]
+    INIT --> FETCH[Fetch series index pages]
+    FETCH --> ARTICLES{Articles found?}
+    ARTICLES -->|No| WARN[Log warning] --> END_EMPTY[Exit 0]
+    ARTICLES -->|Yes| LOOP[For each article]
+    LOOP --> CHECK{Already processed?}
+    CHECK -->|Yes| SKIP[Skip] --> NEXT{More articles?}
+    CHECK -->|No| PARSE[Parse show recommendations]
+    PARSE --> SAVE[Save to shows_history.json]
     SAVE --> MARK[Mark article as processed]
     MARK --> DISCORD{Discord configured?}
     DISCORD -->|Yes| NOTIFY[Send Discord notification]
-    DISCORD -->|No| QBT_CHECK
-    NOTIFY --> QBT_CHECK{qBittorrent available?}
-    QBT_CHECK -->|Yes| RULES[Create qBittorrent rules]
-    QBT_CHECK -->|No| DONE[Exit: success]
-    RULES --> DONE
+    DISCORD -->|No| QBT
+    NOTIFY --> QBT{qBittorrent available?}
+    QBT -->|Yes| RULES[Create download rules]
+    QBT -->|No| NEXT
+    RULES --> NEXT
+    NEXT -->|Yes| LOOP
+    NEXT -->|No| END[Exit 0]
 ```
 
-## qBittorrent Rules Workflow
+## qBittorrent Rules Creation
 
 ```mermaid
 flowchart TD
-    START[New shows detected] --> LOAD[Load existing rules]
-    LOAD --> COMPARE[Compare shows vs existing rules]
-    COMPARE --> NEEDED{New rules needed?}
-    NEEDED -->|No| EXIT[Done: all rules exist]
-    NEEDED -->|Yes| RUNNING{qBittorrent running?}
+    START[create --apply --auto-qbt] --> LOAD[Load show history]
+    LOAD --> EXISTING[Load existing rules]
+    EXISTING --> DIFF[Identify missing rules]
+    DIFF --> ANY{New rules needed?}
+    ANY -->|No| DONE[Print "nothing to add"]
+    ANY -->|Yes| RUNNING{qBittorrent running?}
     RUNNING -->|Yes| CLOSE[Close qBittorrent gracefully]
+    CLOSE --> CLOSED{Closed OK?}
+    CLOSED -->|No| FORCE[Force kill] --> BACKUP
+    CLOSED -->|Yes| BACKUP[Backup existing config .gz]
     RUNNING -->|No| BACKUP
-    CLOSE --> WAIT[Wait up to 10s for shutdown]
-    WAIT --> CLOSED{Closed?}
-    CLOSED -->|No| FORCE[Force kill]
-    CLOSED -->|Yes| BACKUP[Backup current rules]
-    FORCE --> BACKUP
-    BACKUP --> CREATE[Create new rule entries]
-    CREATE --> WRITE[Write updated rules file]
-    WRITE --> RESTART{Was running before?}
-    RESTART -->|Yes| START_QBT[Start qBittorrent]
-    RESTART -->|No| DONE[Done]
-    START_QBT --> DONE
+    BACKUP --> WRITE[Write merged rules JSON]
+    WRITE --> RESTART[Start qBittorrent]
+    RESTART --> VERIFY{Started OK?}
+    VERIFY -->|Yes| SUCCESS[Print summary]
+    VERIFY -->|No| ROLLBACK[Restore backup] --> FAIL[Exit error]
 ```
 
 ## Scraper Parsing Strategy
 
 ```mermaid
 flowchart TD
-    FETCH[Fetch article HTML] --> FIND_BODY[Find article body div]
-    FIND_BODY --> H2[Try: h2 headings with show format]
-    H2 --> H2_FOUND{Shows found?}
-    H2_FOUND -->|Yes| DONE[Return shows]
-    H2_FOUND -->|No| NUMBERED[Try: numbered h2/h3 headings]
-    NUMBERED --> NUM_FOUND{Shows found?}
-    NUM_FOUND -->|Yes| DONE
-    NUM_FOUND -->|No| BOLD[Try: bold/strong numbered text]
-    BOLD --> BOLD_FOUND{Shows found?}
-    BOLD_FOUND -->|Yes| DONE
-    BOLD_FOUND -->|No| BODY[Try: sequential body parsing]
-    BODY --> DONE
+    FETCH[Fetch article HTML] --> S1[Strategy 1: H2 headings]
+    S1 --> FOUND1{Shows found?}
+    FOUND1 -->|Yes| DONE[Return shows]
+    FOUND1 -->|No| S2[Strategy 2: Numbered H2/H3]
+    S2 --> FOUND2{Shows found?}
+    FOUND2 -->|Yes| DONE
+    FOUND2 -->|No| S3[Strategy 3: Bold numbered text]
+    S3 --> FOUND3{Shows found?}
+    FOUND3 -->|Yes| DONE
+    FOUND3 -->|No| S4[Strategy 4: Body text parsing]
+    S4 --> DONE
 ```
 
-The scraper uses a cascading strategy because The Guardian's article format varies over time.
+## Storage Cleanup Workflows
 
-## Data Cleanup Workflows
+### Processed Articles Cleanup (automatic)
+Triggered on every `add_processed_article()` call when count exceeds 100.
+Removes oldest entries to maintain cap.
 
-### Automatic (on each run)
-- Processed articles capped at 100 entries
-- Log files capped at 10 (when `log_to_file = true`)
+### Log File Cleanup
+Manual or triggered by `config.setup_logging()`:
+- Keeps maximum 10 timestamped log files
+- Deletes oldest when limit exceeded
 
-### Manual (via CLI utilities)
-- `storage_utils.py cleanup-articles` — cap processed articles
-- `storage_utils.py cleanup --days N` — remove old history (requires confirmation)
-- `qbittorrent_rules.py cleanup` — remove old backup files
-- `log_manager.py cleanup` — remove old log files
+### qBittorrent Backup Cleanup
+Manual via CLI. Keeps 10 most recent `.json.gz` backup files.
+
+## Test Workflow
+
+```mermaid
+flowchart LR
+    A[./guardian_monitor.py test] --> B[Test Scraper<br/>fetch series page]
+    B --> C[Test Storage<br/>read/write JSON]
+    C --> D[Test Discord<br/>send test message]
+    D --> E[Print results]
+```
 
 ## Scheduling
 
-| Schedule | Cron Expression | Rationale |
-|----------|----------------|-----------|
-| Primary check | `30 8 * * 5` | 30 min after Guardian's 08:00 CET publish time |
-| Backup check | `0 10 * * 5` | Catch late publications |
-| Conservative | Add `0 11 * * 5` | Third check for reliability |
+- **When**: Fridays (Guardian publishes at 08:00 CET)
+- **Recommended cron**: `30 8 * * 5` and `0 10 * * 5` (two checks)
+- **Idempotent**: Safe to run multiple times; processed articles tracked

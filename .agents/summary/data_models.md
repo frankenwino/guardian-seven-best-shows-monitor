@@ -1,123 +1,155 @@
 # Data Models
 
-<!-- metadata:type=data-models, audience=ai-agents, updated=2026-05-29 -->
+<!-- metadata:type=data-models, scope=json-schemas -->
 
-## Data Flow
+## Data File Schemas
 
-```mermaid
-graph LR
-    GUARDIAN[Guardian HTML] -->|Scraper parses| SHOWS[Show Dicts]
-    SHOWS -->|Storage saves| HISTORY[shows_history.json]
-    SHOWS -->|Discord formats| EMBED[Discord Embeds]
-    SHOWS -->|QBT creates| RULES[download_rules.json]
-    
-    ARTICLES[Article Dicts] -->|Storage tracks| PROCESSED[processed_articles.json]
-    ARTICLES -->|Storage updates| LAST[last_checked.json]
-```
+### shows_history.json
 
-## Core Data Structures
+Complete archive of all show recommendations ever processed. Grows indefinitely.
 
-### Article Dictionary
-Returned by `GuardianScraper.get_series_articles()`:
-```python
-{
-    "url": "https://www.theguardian.com/tv-and-radio/2026/may/29/...",
-    "title": "Seven best shows to stream this week",
-    "date": "2026-05-29",       # YYYY-MM-DD extracted from URL
-    "path": "/tv-and-radio/2026/may/29/..."
-}
-```
-
-### Show Dictionary
-Returned by `GuardianScraper.parse_show_recommendations()`:
-```python
-{
-    "title": "Show Name",
-    "platform": "Netflix",       # Extracted from article text
-    "description": "Brief description of the show...",
-    "pick_of_the_week": True     # Boolean, if marked as pick
-}
-```
-
-## Persisted JSON Files
-
-### data/last_checked.json
-```python
-{
-    "url": "https://...",
-    "title": "Seven best shows...",
-    "article_date": "2026-05-29",
-    "checked_at": "2026-05-29T08:30:00.000000",
-    "last_updated": "2026-05-29T08:30:00.000000"
-}
-```
-
-### data/processed_articles.json
-```python
-{
-    "processed_urls": ["https://...", ...],  # List of URLs (max 100)
-    "articles_info": {
-        "https://...": {
-            "title": "Seven best shows...",
-            "date": "2026-05-29",
-            "shows_count": 7,
-            "processed_at": "2026-05-29T08:30:00.000000"
-        }
-    }
-}
-```
-Auto-capped at 100 entries (oldest removed first).
-
-### data/shows_history.json
-```python
+```json
 [
-    {
-        "article_url": "https://...",
-        "article_title": "Seven best shows...",
-        "article_date": "2026-05-29",
-        "shows_count": 7,
-        "processed_at": "2026-05-29T08:30:00.000000",
-        "shows": [
-            {
-                "title": "Show Name",
-                "platform": "Netflix",
-                "description": "...",
-                "pick_of_the_week": false
-            }
-        ]
-    }
+  {
+    "article_url": "https://www.theguardian.com/tv-and-radio/2026/may/29/...",
+    "article_title": "Seven best shows to stream this week",
+    "article_date": "2026-05-29",
+    "processed_at": "2026-05-30T08:30:00",
+    "shows": [
+      {
+        "title": "Show Name",
+        "platform": "Netflix",
+        "description": "Brief description from the article.",
+        "pick_of_the_week": true
+      }
+    ]
+  }
 ]
 ```
-Grows indefinitely — designed as a comprehensive multi-year archive.
 
-## qBittorrent Rule Structure
+### processed_articles.json
 
-### ~/.config/qBittorrent/rss/download_rules.json
-```python
+Deduplication registry. Auto-capped at 100 entries (oldest removed first).
+
+```json
+[
+  {
+    "url": "https://www.theguardian.com/tv-and-radio/2026/may/29/...",
+    "processed_at": "2026-05-30T08:30:00"
+  }
+]
+```
+
+### last_checked.json
+
+Pointer to the most recently processed article.
+
+```json
 {
-    "Show Name": {
-        "enabled": True,
-        "mustContain": "show.name",
-        "mustNotContain": "",
-        "useRegex": False,
-        "episodeFilter": "",
-        "smartFilter": False,
-        "previouslyMatchedEpisodes": [],
-        "affectedFeeds": [],
-        "ignoreDays": 0,
-        "lastMatch": "",
-        "addPaused": None,
-        "assignedCategory": "",
-        "savePath": ""
-    }
+  "url": "https://www.theguardian.com/tv-and-radio/2026/may/29/...",
+  "title": "Seven best shows to stream this week",
+  "date": "2026-05-29",
+  "checked_at": "2026-05-30T08:30:00"
 }
 ```
 
-## Data Retention Policies
+### qBittorrent download_rules.json
 
-| Data | Retention | Mechanism |
-|------|-----------|-----------|
-| Shows history | Indefinite | Grows as archive |
-| Processed articles | 100 most recent | Auto-cleanup on write |
-| Log files | 10 most recent | Auto-cleanup on write |
-| qBittorrent backups | 10 most recent | Manual/auto cleanup |
+qBittorrent's native RSS download rules format (external system config).
+
+```json
+{
+  "Rule Name - Show Title": {
+    "addPaused": false,
+    "assignedCategory": "Guardian Shows",
+    "enabled": true,
+    "mustContain": "show title search terms",
+    "mustNotContain": "",
+    "savePath": "",
+    "useRegex": false,
+    "episodeFilter": "",
+    "smartFilter": false,
+    "previouslyMatchedEpisodes": [],
+    "affectedFeeds": [],
+    "ignoreDays": 0,
+    "lastMatch": ""
+  }
+}
+```
+
+## Data Relationships
+
+```mermaid
+erDiagram
+    ARTICLE ||--o{ SHOW : contains
+    ARTICLE {
+        string url PK
+        string title
+        string date
+        string processed_at
+    }
+    SHOW {
+        string title
+        string platform
+        string description
+        boolean pick_of_the_week
+    }
+    PROCESSED_ARTICLE {
+        string url PK
+        string processed_at
+    }
+    LAST_CHECKED {
+        string url
+        string title
+        string date
+        string checked_at
+    }
+    QBITTORRENT_RULE {
+        string name PK
+        boolean enabled
+        string mustContain
+        string assignedCategory
+    }
+    SHOW ||--o| QBITTORRENT_RULE : generates
+```
+
+## Internal Data Structures
+
+### Article Dict (scraper output)
+```python
+{
+    "url": str,        # Full article URL
+    "title": str,      # Article headline
+    "date": str,       # YYYY-MM-DD extracted from URL
+    "path": str,       # URL path component
+}
+```
+
+### Show Dict (parser output)
+```python
+{
+    "title": str,            # Show title
+    "platform": str,         # Streaming platform name
+    "description": str,      # Article's description
+    "pick_of_the_week": bool # True if marked as pick
+}
+```
+
+### Storage Stats Dict
+```python
+{
+    "total_shows": int,
+    "total_articles": int,
+    "platforms": Dict[str, int],    # platform -> count
+    "date_range": {"earliest": str, "latest": str},
+    "processed_articles_count": int,
+}
+```
+
+## File Storage Strategy
+
+- All data in `data/` directory (git-ignored)
+- JSON format with human-readable indentation
+- Atomic writes: write to temp file then rename
+- Backup-on-write for shows_history.json
+- Corruption recovery: returns default on parse failure

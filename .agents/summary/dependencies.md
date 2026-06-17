@@ -1,81 +1,86 @@
 # Dependencies
 
-<!-- metadata:type=dependencies, audience=ai-agents, updated=2026-05-29 -->
+<!-- metadata:type=dependencies, scope=packages -->
 
-## Python Dependencies
+## Runtime Dependencies
 
-| Package | Version | Purpose | Used By |
-|---------|---------|---------|---------|
-| requests | >=2.31.0 | HTTP client for web scraping | `scraper.py` |
-| beautifulsoup4 | >=4.12.0 | HTML parsing | `scraper.py` |
-| python-dateutil | >=2.8.0 | Date parsing utilities | `scraper.py` |
-| discord-webhook | >=1.3.0 | Discord webhook integration | `discord_bot.py` |
-| python-dotenv | >=1.0.0 | Load .env files | `config.py`, `discord_bot.py` |
+| Package | Version | Purpose |
+|---------|---------|---------|
+| requests | ≥2.31.0 | HTTP client for Guardian scraping |
+| beautifulsoup4 | ≥4.12.0 | HTML parsing of Guardian articles |
+| python-dateutil | ≥2.8.0 | Date parsing utilities |
+| discord-webhook | ≥1.3.0 | Discord notification delivery |
+| python-dotenv | ≥1.0.0 | Load `.env` secrets |
+
+## Development Dependencies
+
+| Package | Version | Purpose |
+|---------|---------|---------|
+| pytest | ≥7.4.0 | Unit and integration testing |
+| mypy | ≥1.5.0 | Static type checking |
 
 ## Standard Library Usage
 
-| Module | Purpose | Used By |
+| Module | Used By | Purpose |
 |--------|---------|---------|
-| `json` | JSON file I/O | `storage.py`, `qbittorrent_rules.py` |
-| `subprocess` | qBittorrent process control | `qbittorrent_rules.py` |
-| `configparser` | INI file parsing | `config.py` |
-| `logging` | Application logging | All modules |
-| `pathlib` | File path handling | All modules |
-| `re` | URL pattern matching, text parsing | `scraper.py` |
-| `gzip` | Backup compression | `qbittorrent_rules.py` |
-| `argparse` | CLI argument parsing | `main.py`, `storage_utils.py` |
-| `shutil` | File operations | `qbittorrent_rules.py` |
-| `time` | Process wait delays | `qbittorrent_rules.py` |
-
-## System Dependencies
-
-| Dependency | Purpose | Required |
-|------------|---------|----------|
-| Python 3 | Runtime | Yes |
-| cron | Scheduling | Recommended |
-| qBittorrent | Download automation | Optional |
-| Internet access | Scraping + Discord | Yes |
+| `json` | storage, qbittorrent_rules | JSON serialization |
+| `subprocess` | qbittorrent_rules | Process control (pgrep/pkill) |
+| `configparser` | config | INI file parsing |
+| `logging` | All modules | Application logging |
+| `pathlib` | All modules | Path manipulation |
+| `gzip` | qbittorrent_rules | Backup compression |
+| `shutil` | storage | File operations (backup copy) |
+| `argparse` | main | CLI argument parsing |
+| `re` | scraper | Regex pattern matching |
+| `time` | qbittorrent_rules | Sleep for process control |
 
 ## Dependency Graph
 
 ```mermaid
 graph TD
-    subgraph External
-        REQUESTS[requests]
-        BS4[beautifulsoup4]
-        DATEUTIL[python-dateutil]
-        DISCORD_WH[discord-webhook]
-        DOTENV[python-dotenv]
-    end
-
-    subgraph Modules
-        CONFIG[config.py]
+    subgraph "Application Modules"
+        MAIN[main.py]
         SCRAPER[scraper.py]
         STORAGE[storage.py]
         DISCORD[discord_bot.py]
         QBT[qbittorrent_rules.py]
-        MAIN[main.py]
+        CONFIG[config.py]
     end
 
-    CONFIG --> DOTENV
-    SCRAPER --> REQUESTS
-    SCRAPER --> BS4
-    SCRAPER --> DATEUTIL
-    DISCORD --> DISCORD_WH
-    DISCORD --> DOTENV
-    MAIN --> CONFIG
+    subgraph "Third-Party Packages"
+        REQ[requests]
+        BS4[beautifulsoup4]
+        DW[discord-webhook]
+        DOTENV[python-dotenv]
+        DATEUTIL[python-dateutil]
+    end
+
+    subgraph "System"
+        CRON[cron]
+        QBTPROC[qBittorrent process]
+        FS[File system]
+    end
+
     MAIN --> SCRAPER
     MAIN --> STORAGE
     MAIN --> DISCORD
     MAIN --> QBT
+    MAIN --> CONFIG
+
+    SCRAPER --> REQ
+    SCRAPER --> BS4
+    DISCORD --> DW
+    CONFIG --> DOTENV
+    QBT --> FS
+    QBT --> QBTPROC
+    STORAGE --> FS
+    CRON --> MAIN
 ```
 
-## Installation
+## System Requirements
 
-```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
-
-The `requirements.txt` is at the project root. No build system (setuptools, poetry, etc.) is used — direct pip install of dependencies.
+- **Python**: 3.14 (development), mypy targets 3.10
+- **OS**: Linux (uses `pgrep`/`pkill` for qBittorrent process control)
+- **qBittorrent**: Optional; required only for RSS rule management
+- **Network**: Required for Guardian scraping and Discord notifications
+- **Cron**: External scheduler (not managed by the application)

@@ -1,78 +1,125 @@
 # Architecture
 
-<!-- metadata:type=architecture, audience=ai-agents, updated=2026-05-29 -->
+<!-- metadata:type=architecture, scope=system -->
 
-## System Architecture
+## System Overview
 
 ```mermaid
 graph TB
-    CRON[Cron Scheduler] -->|Triggers| CLI[guardian_monitor.py<br/>CLI Entry Point]
-    CLI -->|Delegates to| MAIN[GuardianMonitor<br/>app/main.py]
-    
-    MAIN --> SCRAPER[GuardianScraper<br/>app/scraper.py]
-    MAIN --> STORAGE[ShowDataStorage<br/>app/storage.py]
-    MAIN --> DISCORD[GuardianDiscordBot<br/>app/discord_bot.py]
-    MAIN --> QBT[QBittorrentRulesManager<br/>app/qbittorrent_rules.py]
-    
-    SCRAPER -->|HTTP GET| GUARDIAN[The Guardian Website]
-    DISCORD -->|Webhook POST| DISCORD_API[Discord API]
-    QBT -->|File I/O| QBT_CONFIG[qBittorrent Config Files]
-    QBT -->|subprocess| QBT_PROC[qBittorrent Process]
-    STORAGE -->|JSON R/W| DATA[(data/ directory)]
-    
-    CONFIG[Config Singleton<br/>app/config.py] -.->|Provides settings| MAIN
-    CONFIG -.-> SCRAPER
-    CONFIG -.-> DISCORD
-    
-    ENV[.env] -.->|Secrets| CONFIG
-    INI[config.ini] -.->|Settings| CONFIG
+    subgraph "Entry Points"
+        CLI[guardian_monitor.py]
+        QBT_CLI[qbittorrent_rules.py]
+        STOR_CLI[storage_utils.py]
+        LOG_CLI[log_manager.py]
+    end
+
+    subgraph "Core Application"
+        M[GuardianMonitor<br/>Orchestrator]
+        S[GuardianScraper]
+        ST[ShowDataStorage]
+        D[GuardianDiscordBot]
+        Q[QBittorrentRulesManager]
+        C[Config Singleton]
+    end
+
+    subgraph "External Systems"
+        GUARDIAN[The Guardian<br/>Website]
+        DISCORD[Discord<br/>Webhook API]
+        QBT[qBittorrent<br/>Process + Config]
+    end
+
+    subgraph "Persistence"
+        DATA[data/*.json]
+        LOGS[logs/*.log]
+    end
+
+    CLI --> M
+    QBT_CLI --> Q
+    STOR_CLI --> ST
+    LOG_CLI --> LOGS
+
+    M --> S
+    M --> ST
+    M --> D
+    M --> Q
+    C -.-> M
+    C -.-> S
+    C -.-> D
+
+    S --> GUARDIAN
+    D --> DISCORD
+    Q --> QBT
+    ST --> DATA
 ```
 
 ## Design Patterns
 
 ### Orchestrator Pattern
-`GuardianMonitor` (app/main.py) acts as the central orchestrator, coordinating all components in a defined sequence: scrape → store → notify → manage rules.
+`GuardianMonitor` in `app/main.py` coordinates all components. Each component is independently testable and has no cross-dependencies.
 
-### Singleton Configuration
-`Config` class in app/config.py instantiates a module-level `config` object imported by all modules. Loads from both `config.ini` (settings) and `.env` (secrets).
+### Config Singleton
+`app/config.py` exports a global `config` instance loaded at import time. All modules import from it. Sources: `config.ini` (tracked) + `.env` (secrets).
 
 ### Graceful Degradation
-- Discord notifications are optional — the system works without them
-- qBittorrent integration is optional — imported with try/except
-- Error notifications are sent to Discord if configured, but failures don't halt execution
+Optional features (Discord, qBittorrent) are checked at runtime. Missing configuration disables the feature rather than crashing.
 
 ### Idempotent Execution
-Each run checks `processed_articles.json` to determine if the latest article has already been handled, preventing duplicate notifications and data entries.
+`processed_articles.json` tracks which articles have been processed. Repeated runs are safe — duplicate processing is prevented.
 
-## Component Interaction Flow
+### Cascading Parse Strategies
+The scraper attempts multiple HTML parsing strategies in order, because Guardian article formats vary:
+1. H2 headings with show details
+2. Numbered H2/H3 headings
+3. Bold numbered text patterns
+4. Full body text parsing
+
+### Process Lifecycle Management
+qBittorrent rules require direct file manipulation of qBittorrent's config. The manager implements:
+- Close process (graceful → force)
+- Backup existing config (gzip compressed)
+- Write new rules
+- Restart process
+- Rollback on failure
+
+## Module Dependencies
+
+```mermaid
+graph LR
+    main --> config
+    main --> scraper
+    main --> storage
+    main --> discord_bot
+    main --> qbittorrent_rules
+    scraper --> config
+    discord_bot --> config
+    qbittorrent_rules --> storage
+```
+
+## Data Flow
 
 ```mermaid
 sequenceDiagram
     participant Cron
-    participant CLI as guardian_monitor.py
-    participant Monitor as GuardianMonitor
-    participant Scraper as GuardianScraper
-    participant Storage as ShowDataStorage
-    participant Discord as GuardianDiscordBot
-    participant QBT as QBittorrentRulesManager
+    participant Monitor
+    participant Scraper
+    participant Storage
+    participant Discord
+    participant QBT
 
-    Cron->>CLI: Execute
-    CLI->>Monitor: run()
+    Cron->>Monitor: Execute
     Monitor->>Scraper: get_series_articles()
+    Scraper->>Scraper: fetch_page() per series URL
     Scraper-->>Monitor: articles[]
-    Monitor->>Storage: is_article_processed(url)
-    Storage-->>Monitor: false (new article)
-    Monitor->>Scraper: parse_show_recommendations(url)
-    Scraper-->>Monitor: shows[]
-    Monitor->>Storage: save_shows_data()
-    Monitor->>Storage: add_processed_article()
-    Monitor->>Discord: send_new_shows_alert()
-    Monitor->>QBT: check_existing_rules() / create rules
+    
+    loop Each article
+        Monitor->>Storage: is_article_processed(url)?
+        alt New article
+            Monitor->>Scraper: parse_show_recommendations(url)
+            Scraper-->>Monitor: shows[]
+            Monitor->>Storage: save_shows_data(shows)
+            Monitor->>Storage: add_processed_article(url)
+            Monitor->>Discord: send_new_shows_alert(shows)
+            Monitor->>QBT: create_missing_rules(shows)
+        end
+    end
 ```
-
-## Error Handling Strategy
-
-- Each component catches its own exceptions and logs them
-- The orchestrator catches component failures and continues with remaining steps
-- Discord error notifications are sent for critical failures (if configured)
-- qBittorrent process management includes rollback (restart if closed)
