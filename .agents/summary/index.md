@@ -17,6 +17,7 @@ This directory contains structured documentation for the Guardian Seven Best Sho
 | "What's the JSON format for X?" | `data_models.md` |
 | "What happens when the cron runs?" | `workflows.md` |
 | "What libraries are used?" | `dependencies.md` |
+| "What's undocumented or where do I start debugging?" | `review_notes.md` |
 
 ## File Summaries
 
@@ -40,6 +41,9 @@ Flowcharts for: main execution cycle, qBittorrent rule creation (with rollback),
 
 ### dependencies.md
 Runtime and dev dependency tables with versions and purposes. Standard library usage summary. Full dependency graph (Mermaid). System requirements.
+
+### review_notes.md
+Documentation consistency/completeness checks, known gaps, and debugging pointers for scraper parsing, qBittorrent workflow failures, and the processed-articles cap.
 
 ## Cross-References
 

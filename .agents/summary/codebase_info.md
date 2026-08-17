@@ -12,7 +12,7 @@
 
 ## Purpose
 
-Monitors The Guardian's weekly "Seven Best Shows to Stream" and "Seven Best Films to Watch on TV" article series. Scrapes recommendations, persists to JSON, sends Discord notifications, and optionally creates qBittorrent RSS download rules.
+Monitors The Guardian's weekly "Seven Best Shows to Stream" article series (the only series configured in `config.ini`; films articles are explicitly rejected by the scraper). Scrapes recommendations, persists to JSON, sends Discord notifications, and optionally creates qBittorrent RSS download rules.
 
 ## Technology Stack
 

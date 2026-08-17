@@ -21,10 +21,12 @@ classDiagram
         +base_url: str
         +series_urls: List[str]
         +session: requests.Session
+        +EXCLUDED_URL_SUBSTRINGS: tuple
         +fetch_page(url) BeautifulSoup?
         +get_series_articles() List[Dict]
         +get_latest_article_url() str?
         +parse_show_recommendations(url) List[Dict]
+        -_is_excluded_url(url) bool
         -_is_seven_best_shows_article(url) bool
         -_extract_title_from_link(link) str
         -_extract_date_from_url(url) str?

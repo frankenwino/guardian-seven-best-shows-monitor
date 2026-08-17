@@ -341,8 +341,7 @@ class QBittorrentRulesManager:
         must_contain = f"{clean_title} 1080"
         must_not_contain = "4K|2160|8K"
         
-        # Always put show title first in tags, followed by "Guardian Best Shows"
-        tags = [show_title, "Guardian Best Shows"]
+        tags = [show_title]
         
         return {
             "addPaused": None,

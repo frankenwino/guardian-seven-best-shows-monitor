@@ -47,6 +47,36 @@ class TestIsSevenBestShowsArticle:
         url = "/tv-and-radio/2026/jan/10/seven-best-films-to-watch"
         assert scraper._is_seven_best_shows_article(url) is False
 
+    def test_real_films_article_rejected(self, scraper):
+        url = (
+            "/tv-and-radio/2026/aug/14/the-beast-to-novak-djokovic-the-wolf-in-winter-"
+            "the-seven-best-films-to-watch-on-tv-this-week"
+        )
+        assert scraper._is_seven_best_shows_article(url) is False
+
+    def test_real_shows_article_accepted(self, scraper):
+        url = (
+            "/tv-and-radio/2026/aug/14/lanterns-to-a-beautiful-obsession-"
+            "the-seven-best-shows-to-stream-this-week"
+        )
+        assert scraper._is_seven_best_shows_article(url) is True
+
+    def test_film_section_url_rejected(self, scraper):
+        url = "/film/2026/aug/14/the-seven-best-shows-to-stream-this-week"
+        assert scraper._is_seven_best_shows_article(url) is False
+
+
+class TestExcludedSeriesUrls:
+    def test_films_series_url_not_fetched(self):
+        scraper = GuardianScraper(
+            series_urls=[
+                "https://www.theguardian.com/tv-and-radio/series/the-seven-best-films-to-watch-on-tv-this-week"
+            ]
+        )
+        with patch.object(scraper, "fetch_page") as mock_fetch:
+            assert scraper.get_series_articles() == []
+            mock_fetch.assert_not_called()
+
 
 class TestExtractDateFromUrl:
     def test_standard_url(self, scraper):

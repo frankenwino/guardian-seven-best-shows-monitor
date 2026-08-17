@@ -16,6 +16,13 @@ logger = logging.getLogger(__name__)
 
 class GuardianScraper:
     """Scraper for The Guardian's Seven Best Shows series."""
+
+    # Any URL containing one of these is never fetched or parsed.
+    EXCLUDED_URL_SUBSTRINGS = (
+        'seven-best-films',
+        'best-films-to-watch',
+        '/film/',
+    )
     
     def __init__(self, series_urls: Optional[List[str]] = None, timeout: int = 10, user_agent: Optional[str] = None, retry_attempts: int = 3, retry_delay: int = 5):
         self.base_url = "https://www.theguardian.com"
@@ -77,6 +84,10 @@ class GuardianScraper:
         seen_urls: set[str] = set()
         
         for series_url in self.series_urls:
+            if self._is_excluded_url(series_url):
+                logger.warning(f"Skipping excluded series URL (not a shows series): {series_url}")
+                continue
+
             soup = self.fetch_page(series_url)
             if not soup:
                 continue
@@ -113,9 +124,19 @@ class GuardianScraper:
         logger.info(f"Found {len(articles)} articles in series")
         return articles
     
+    def _is_excluded_url(self, href: str) -> bool:
+        """Check if a URL is explicitly blocked (e.g. the films series)."""
+        if not href:
+            return False
+        href_lower = href.lower()
+        return any(blocked in href_lower for blocked in self.EXCLUDED_URL_SUBSTRINGS)
+
     def _is_seven_best_shows_article(self, href: str) -> bool:
         """Check if URL is a seven best shows article."""
         if not href:
+            return False
+
+        if self._is_excluded_url(href):
             return False
             
         # Pattern matching for Guardian seven best shows URLs
@@ -130,9 +151,7 @@ class GuardianScraper:
         
         # Also check for "seven-best" or "best-shows" in the URL
         if 'seven-best' in href.lower() or 'best-shows-to-stream' in href.lower():
-            # Exclude film articles and series page itself
-            if 'film' in href.lower():
-                return False
+            # Exclude the series index page itself
             if '/series/' not in href and re.search(r'/\d{4}/', href):
                 return True
         
