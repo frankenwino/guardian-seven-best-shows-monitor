@@ -138,6 +138,96 @@ class GuardianDiscordBot:
             logger.error(f"Error sending Discord notification: {e}")
             return False
     
+    def send_annual_roundup_alert(
+        self,
+        article_title: str,
+        article_date: str,
+        article_url: str,
+        shows: List[Dict[str, str]],
+        series_type: str,
+    ) -> bool:
+        """Send a notification for a Guardian annual best-of-year roundup article.
+
+        Args:
+            article_title: Title of the Guardian article.
+            article_date:  Publication date (YYYY-MM-DD).
+            article_url:   URL of the article.
+            shows:         List of show/film dicts.
+            series_type:   'annual_tv' or 'annual_film'.
+
+        Returns:
+            True if the webhook POST succeeded, False otherwise.
+        """
+        if not self.webhook_url:
+            logger.error("Cannot send Discord notification: webhook URL not configured")
+            return False
+
+        try:
+            if series_type == "annual_film":
+                embed_title = "🎬 Guardian Best Films of the Year"
+                color = 0x8B0000  # dark red
+            else:
+                embed_title = "📺 Guardian Best TV of the Year"
+                color = 0x005689  # Guardian dark blue
+
+            embed = DiscordEmbed(
+                title=embed_title,
+                description=f"**{len(shows)} titles** from The Guardian's annual roundup",
+                color=color,
+                url=article_url,
+            )
+
+            embed.add_embed_field(
+                name="📅 Published",
+                value=self._format_date(article_date),
+                inline=True,
+            )
+            embed.add_embed_field(name="📰 Source", value="The Guardian", inline=True)
+            embed.add_embed_field(
+                name="🔗 Read Full Article",
+                value=f"[Click Here]({article_url})",
+                inline=False,
+            )
+
+            # Annual roundups can have many entries — cap at 20
+            shows_to_display = shows[:20]
+            for i, show in enumerate(shows_to_display, 1):
+                title = show.get("title", "Unknown")
+                platform = show.get("platform", "Platform not specified")
+                description = show.get("description", "No description available")
+                if len(description) > 150:
+                    description = description[:147] + "..."
+                embed.add_embed_field(
+                    name=f"{i}. {title}",
+                    value=f"**Platform:** {platform}\n{description}",
+                    inline=False,
+                )
+
+            embed.set_footer(
+                text="Guardian Annual Roundup Monitor",
+                icon_url="https://assets.guim.co.uk/images/favicons/fee5e2d638d1c35f6d501fa397e53329/152x152.png",
+            )
+            embed.set_timestamp()
+
+            webhook = DiscordWebhook(url=self.webhook_url)
+            webhook.add_embed(embed)
+            response = webhook.execute()
+
+            if response.status_code == 200:
+                logger.info(
+                    f"Annual roundup Discord notification sent for {len(shows)} titles"
+                )
+                return True
+            else:
+                logger.error(
+                    f"Failed to send annual roundup notification. Status: {response.status_code}"
+                )
+                return False
+
+        except Exception as e:
+            logger.error(f"Error sending annual roundup notification: {e}")
+            return False
+
     def send_error_notification(self, error_message: str, context: Optional[str] = None) -> bool:
         """
         Send error notification to Discord.
