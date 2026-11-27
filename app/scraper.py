@@ -33,11 +33,13 @@ class GuardianScraper:
         self.retry_attempts = retry_attempts
         self.retry_delay = retry_delay
         self.headers = {
-            'User-Agent': user_agent or 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'User-Agent': user_agent or 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Language': 'en-GB,en;q=0.9',
             'Accept-Encoding': 'gzip, deflate',
             'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Cache-Control': 'max-age=0',
         }
         self.session = requests.Session()
         self.session.headers.update(self.headers)
@@ -75,55 +77,48 @@ class GuardianScraper:
     
     def get_series_articles(self) -> List[Dict[str, str]]:
         """
-        Get all articles from all configured series index pages.
-        
-        Returns:
-            List of dictionaries with article info (url, title, date)
-        """
-        articles = []
-        seen_urls: set[str] = set()
-        
-        for series_url in self.series_urls:
-            if self._is_excluded_url(series_url):
-                logger.warning(f"Skipping excluded series URL (not a shows series): {series_url}")
-                continue
+        Get all articles from the Guardian series using the Content API,
+        including the article body HTML so parse_show_recommendations can
+        use it without making a separate HTTP request.
 
-            soup = self.fetch_page(series_url)
-            if not soup:
-                continue
-            
-            article_links = soup.find_all('a', href=True)
-            
-            for link in article_links:
-                href = link.get('href')
-                if not href or not isinstance(href, str):
-                    continue
-                    
-                if self._is_seven_best_shows_article(href):
-                    full_url = urljoin(self.base_url, href)
-                    if full_url in seen_urls:
-                        continue
-                    seen_urls.add(full_url)
-                    
-                    title = self._extract_title_from_link(link)
-                    date = self._extract_date_from_url(href)
-                    
-                    if not title and date:
-                        title = f"Seven Best Shows to Stream This Week - {date}"
-                    
-                    if date:
-                        articles.append({
-                            'url': full_url,
-                            'title': title.strip() if title else f"Seven Best Shows - {date}",
-                            'date': date,
-                            'path': href
-                        })
-        
-        articles.sort(key=lambda x: x['date'], reverse=True)
-        
-        logger.info(f"Found {len(articles)} articles in series")
+        Returns:
+            List of dictionaries with article info (url, title, date, body_html)
+        """
+        import os
+        api_key = os.getenv('GUARDIAN_API_KEY')
+        if not api_key:
+            logger.error('GUARDIAN_API_KEY not set — cannot fetch series articles')
+            return []
+
+        articles = []
+        try:
+            resp = requests.get(
+                'https://content.guardianapis.com/search',
+                params={
+                    'tag': 'tv-and-radio/series/the-seven-best-shows-to-stream-this-week',
+                    'api-key': api_key,
+                    'show-fields': 'headline,trailText,body',
+                    'order-by': 'newest',
+                    'page-size': 50,
+                },
+                timeout=self.timeout,
+            )
+            resp.raise_for_status()
+            results = resp.json()['response']['results']
+            for r in results:
+                date = self._extract_date_from_url(r['webUrl'])
+                articles.append({
+                    'url': r['webUrl'],
+                    'title': r['webTitle'],
+                    'date': date or '',
+                    'path': r['id'],
+                    'body_html': r.get('fields', {}).get('body', ''),
+                })
+        except Exception as exc:
+            logger.error(f'Guardian API request failed: {exc}')
+
+        logger.info(f'Found {len(articles)} articles in series')
         return articles
-    
     def _is_excluded_url(self, href: str) -> bool:
         """Check if a URL is explicitly blocked (e.g. the films series)."""
         if not href:
@@ -223,17 +218,21 @@ class GuardianScraper:
         logger.info("No new articles found since last check")
         return None
     
-    def parse_show_recommendations(self, article_url: str) -> List[Dict[str, Any]]:
+    def parse_show_recommendations(self, article_url: str, body_html: str = '') -> List[Dict[str, Any]]:
         """
         Parse TV show recommendations from a Guardian article.
-        
+
         Args:
             article_url: URL of the article to parse
-            
+            body_html:   Pre-fetched HTML body from the Guardian API (avoids HTTP request)
+
         Returns:
             List of show dictionaries with title, description, platform
         """
-        soup = self.fetch_page(article_url)
+        if body_html:
+            soup = BeautifulSoup(body_html, 'html.parser')
+        else:
+            soup = self.fetch_page(article_url)
         if not soup:
             return []
         

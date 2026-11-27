@@ -92,7 +92,7 @@ class GuardianMonitor:
                 
                 self.logger.info(f"New article: {article['title']} ({article['date']})")
                 
-                shows = self.scraper.parse_show_recommendations(article['url'])
+                shows = self.scraper.parse_show_recommendations(article["url"], article.get("body_html", ""))
                 if not shows:
                     self.logger.warning(f"No shows found in: {article['title']}")
                     continue
