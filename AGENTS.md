@@ -57,6 +57,7 @@ graph LR
 - Graceful degradation: Discord and qBittorrent are optional
 - Idempotent: `processed_articles.json` prevents duplicate processing
 - Cascading scraper: tries 4 parsing strategies because Guardian article format varies
+- Article dicts carry `series_tag` (e.g. `tv-and-radio/series/2025-in-tv`) and `series_type` (`weekly` | `annual_tv` | `annual_film`) — routing in `main.py` and Discord branching depend on these
 
 ## Configuration
 
@@ -81,7 +82,10 @@ Config is loaded once at module import time via the global `config` instance in 
 - **qBittorrent rules management** requires closing the qBittorrent process to write its config file. The code handles close → backup → write → restart with rollback on failure.
 - **Package imports**: `app/` is a real package; modules use relative imports (`from .config import config`) and `guardian_monitor.py` does `from app.main import main`. The standalone scripts (`demo_restart.py`, `test_qbt_restart.py`, `tests/conftest.py`, `app/storage_utils.py`) still manipulate `sys.path` to import modules directly.
 - **Scheduling**: Designed for Friday-only cron execution (Guardian publishes Fridays 08:00 CET). Recommended: `30 8 * * 5` and `0 10 * * 5`.
-- **Single series**: Only the "Seven Best Shows to Stream" series is configured (`series_urls` in `config.ini`). `GuardianScraper.EXCLUDED_URL_SUBSTRINGS` blocks films URLs (`seven-best-films`, `best-films-to-watch`, `/film/`) before any matching, and blocked series index URLs are skipped without being fetched (see `tests/test_scraper.py`).
+- **Multi-series**: `series_urls` in `config.ini` is a comma-separated list. Each URL is converted to a Guardian Content API tag. `series_type` is derived automatically: `weekly` (default), `annual_tv` (tag matches `\d{4}-in-tv` or `best-tv-of-\d{4}`), `annual_film` (tag starts with `film/`). Article dicts include `series_tag` and `series_type` keys — downstream code routes on these.
+- **Annual roundups**: same cron job handles weekly and annual articles. Annual roundup articles published in December are picked up on the next Friday run. Add new year series URLs to `config.ini` when The Guardian publishes them (commented-out placeholders are already there for 2026).
+- **Discord routing**: `_send_discord_notifications` in `main.py` calls `send_annual_roundup_alert` for `annual_tv`/`annual_film`, `send_new_shows_alert` for `weekly`.
+- **qBittorrent rules**: skipped for `annual_film` articles (film titles have no TV episode structure). Runs as normal for `weekly` and `annual_tv`.
 - **Logging**: Log files are timestamped (`app/config.py`), but file logging is off by default (`log_to_file = false`), so `logs/` is normally empty.
 - **Storage safety**: JSON writes use corruption recovery (safe load with fallback to defaults) and backup-on-write.
 
