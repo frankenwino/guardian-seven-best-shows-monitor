@@ -50,3 +50,14 @@ Test the exact cron command:
 - **Efficient**: 52 checks/year vs 365
 - **Pattern-based**: Matches Guardian's actual schedule
 - **Resource-friendly**: No wasted daily checks
+
+## Annual Roundups
+
+The same Friday cron job also handles annual "best of year" roundups
+(configured in `series_urls` in `config.ini`). The Guardian publishes
+these in December. Because the monitor deduplicates by article URL,
+it will pick them up on the first Friday run after they're published
+and send a separate Discord embed with the annual roundup style.
+
+No additional cron job is needed. To add the next year's series once
+The Guardian publishes it, uncomment the relevant line in `config.ini`.
