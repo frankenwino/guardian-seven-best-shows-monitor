@@ -112,7 +112,7 @@ class GuardianMonitor:
                 # Create qBittorrent rules
                 if self.qbt_manager:
                     try:
-                        self._manage_qbittorrent_rules(shows)
+                        self._manage_qbittorrent_rules(shows, article.get('series_type', 'weekly'))
                     except Exception as e:
                         self.logger.error(f"Failed to manage qBittorrent rules: {e}")
                         if self.discord_bot and config.send_error_notifications:
@@ -194,13 +194,21 @@ class GuardianMonitor:
             self.logger.error(f"Error saving shows data: {e}")
             return False
     
-    def _manage_qbittorrent_rules(self, shows: List[Dict[str, str]]) -> None:
+    def _manage_qbittorrent_rules(self, shows: List[Dict[str, str]], series_type: str = 'weekly') -> None:
         """
         Check and create qBittorrent rules for new shows.
-        
+
+        Skips rule creation for annual film roundups — film titles do not
+        follow TV episode naming conventions.
+
         Args:
-            shows: List of show dictionaries from the Guardian article
+            shows: List of show dictionaries from the Guardian article.
+            series_type: 'weekly', 'annual_tv', or 'annual_film'.
         """
+        if series_type == 'annual_film':
+            self.logger.info("Skipping qBittorrent rules for annual film roundup")
+            return
+
         self.logger.info("Checking qBittorrent rules for new shows...")
         
         was_running = False  # Initialize to avoid UnboundLocalError
@@ -283,14 +291,22 @@ class GuardianMonitor:
             True if successful, False otherwise
         """
         try:
-            # Send main notification
-            success = self.discord_bot.send_new_shows_alert(
-                article['title'],
-                article['date'],
-                article['url'],
-                shows
-            )
-            
+            series_type = article.get('series_type', 'weekly')
+            if series_type in ('annual_tv', 'annual_film'):
+                success = self.discord_bot.send_annual_roundup_alert(
+                    article['title'],
+                    article['date'],
+                    article['url'],
+                    shows,
+                    series_type,
+                )
+            else:
+                success = self.discord_bot.send_new_shows_alert(
+                    article['title'],
+                    article['date'],
+                    article['url'],
+                    shows,
+                )
             return success
             
         except Exception as e:
